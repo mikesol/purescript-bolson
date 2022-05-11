@@ -1,6 +1,6 @@
 # purescript-deku
 
-![deku](./deku.gif)
+![deku](./bolson.jpeg)
 
 A library to help build frameworks using `purescript-event`.
 
