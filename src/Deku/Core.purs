@@ -26,9 +26,11 @@ newtype FixedChildren logic obj m lock = FixedChildren
 newtype EventfulElement logic obj m lock = EventfulElement
   (AnEvent m (Entity logic obj m lock))
 
+data Scope = Local String | Global
+
 type PSR m =
   { parent :: Maybe String
-  , scope :: String
+  , scope :: Scope
   , raiseId :: String -> m Unit
   }
 

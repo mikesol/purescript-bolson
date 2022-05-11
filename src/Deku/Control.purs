@@ -8,7 +8,7 @@ module Bolson.Control
 
 import Prelude
 
-import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), EventfulElement(..), FixedChildren(..), PSR)
+import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), EventfulElement(..), FixedChildren(..), PSR, Scope(..))
 import Control.Alt ((<|>))
 import Control.Lazy as Lazy
 import Control.Monad.ST.Class (class MonadST, liftST)
@@ -46,13 +46,13 @@ internalPortal
    . Compare n (-1) GT
   => MonadST s m
   => Boolean
-  -> (String -> String)
+  -> (Scope -> Scope)
   -> (logic -> interpreter -> String -> payload)
   -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (obj -> Element interpreter m lock0 payload)
   -> (Element interpreter m lock0 payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (interpreter -> { id :: String } -> payload)
   -> (Entity logic obj m lock0 -> Entity logic obj m lock0)
   -> Vect n (Entity logic obj m lock0)
@@ -120,16 +120,16 @@ globalPortal
   => MonadST s m
   => (logic -> interpreter -> String -> payload)
   -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (obj -> Element interpreter m lock payload)
   -> (Element interpreter m lock payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (interpreter -> { id :: String } -> payload)
   -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> Vect n (Entity logic obj m lock)
   -> ( Vect n (Entity logic obj m lock)       -> Entity logic obj m lock)
   -> Entity logic obj m lock
-globalPortal doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt toBeam closure = internalPortal true (const "@portal@") doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt  toBeam (\x _ -> closure x)
+globalPortal doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt toBeam closure = internalPortal true (const Global) doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt  toBeam (\x _ -> closure x)
 
 portal
   :: forall n s m logic obj interpreter lock payload
@@ -137,10 +137,10 @@ portal
   => MonadST s m
   => (logic -> interpreter -> String -> payload)
   -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (obj -> Element interpreter m lock payload)
   -> (Element interpreter m lock payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (interpreter -> { id :: String } -> payload)
   -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> Vect n (Entity logic obj m lock)
@@ -159,7 +159,7 @@ flatten
   => MonadST s m
   => (logic -> interpreter -> String -> payload)
   -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> (obj -> Element interpreter m lock payload)
   -> (Element interpreter m lock payload -> obj)
@@ -194,7 +194,7 @@ flatten
             eltsUnsub <- liftST $ Ref.new (pure unit)
             myId <- liftST $ Ref.new Nothing
             myImmediateCancellation <- liftST $ Ref.new (pure unit)
-            myScope <- ids interpreter
+            myScope <- Local <$> ids interpreter
             stageRef <- liftST $ Ref.new Begin
             c0 <- subscribe inner \kid' -> do
               stage <- liftST $ Ref.read stageRef
@@ -266,11 +266,11 @@ fix
   :: forall s m obj logic interpreter lock payload
    . MonadST s m => (logic -> interpreter -> String -> payload)
   -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> (obj -> Element interpreter m lock payload)
   -> (Element interpreter m lock payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String, scope :: String } -> payload)
+  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> Entity logic obj m lock
 fix
