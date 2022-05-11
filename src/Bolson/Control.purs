@@ -291,7 +291,7 @@ fix
           Nothing -> pure unit
           -- only do the connection if not silence
           Just r -> for_ ii.parent \p' ->
-            when (r /= p') (ii.raiseId r *> k0 (connectToParent interpret { id: r, parent: p', scope: ii.scope }))
+            when (r /= p') (ii.raiseId r *> k0 (connectToParent interpret { id: r, parent: p' }))
         pure (pure unit)
     subscribe
       ( flatten doLogic
