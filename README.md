@@ -14,3 +14,7 @@ Often times, in an event based architectures, we need to manage the presence and
 - connecting objects to other objects.
 
 There is very little variation in how these things can be implemented, but there are all sorts of ways to get them wrong. In `purescript-deku`, `purescript-wags`, and `purescript-rito`, while each platform has its own flair, their cores are all implemented using this library.
+
+## Why Bolson?
+
+Bolson is short for "Bifunctorial Optics for Lawvere Sets with Orthogonal N-Tuples." Completely coincidentally, it also happens to be the name of the builder from Zelda: Breath of the Wild.
