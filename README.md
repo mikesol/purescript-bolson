@@ -1,4 +1,4 @@
-# purescript-deku
+# purescript-bolson
 
 ![deku](./bolson.jpeg)
 
