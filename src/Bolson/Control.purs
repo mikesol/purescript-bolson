@@ -50,18 +50,18 @@ internalPortal
   -> (logic -> interpreter -> String -> payload)
   -> (interpreter -> m String)
   -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
+  -> (Entity logic obj m lock0 -> Entity logic obj m lock0)
   -> (obj -> Element interpreter m lock0 payload)
   -> (Element interpreter m lock0 payload -> obj)
   -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (interpreter -> { id :: String } -> payload)
-  -> (Entity logic obj m lock0 -> Entity logic obj m lock0)
   -> Vect n (Entity logic obj m lock0)
   -> ( Vect n (Entity logic obj m lock1)
        -> (Entity logic obj m lock0 -> Entity logic obj m lock1)
        -> Entity logic obj m lock1
      )
   -> Entity logic obj m lock0
-internalPortal isGlobal scopeF doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt toBeam closure = Element' $ fromElt $ Element go
+internalPortal isGlobal scopeF doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam closure = Element' $ fromElt $ Element go
   where
   go psr interpreter = makeEvent \k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
@@ -121,15 +121,15 @@ globalPortal
   => (logic -> interpreter -> String -> payload)
   -> (interpreter -> m String)
   -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
+  -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> (obj -> Element interpreter m lock payload)
   -> (Element interpreter m lock payload -> obj)
   -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (interpreter -> { id :: String } -> payload)
-  -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> Vect n (Entity logic obj m lock)
   -> ( Vect n (Entity logic obj m lock)       -> Entity logic obj m lock)
   -> Entity logic obj m lock
-globalPortal doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt toBeam closure = internalPortal true (const Global) doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt  toBeam (\x _ -> closure x)
+globalPortal doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam closure = internalPortal true (const Global) doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam (\x _ -> closure x)
 
 portal
   :: forall n s m logic obj interpreter lock payload
@@ -138,18 +138,18 @@ portal
   => (logic -> interpreter -> String -> payload)
   -> (interpreter -> m String)
   -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
+  -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> (obj -> Element interpreter m lock payload)
   -> (Element interpreter m lock payload -> obj)
   -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
   -> (interpreter -> { id :: String } -> payload)
-  -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> Vect n (Entity logic obj m lock)
   -> (forall lock1. Vect n (Entity logic obj m lock1)
        -> (Entity logic obj m lock -> Entity logic obj m lock1)
        -> Entity logic obj m lock1
      )
   -> Entity logic obj m lock
-portal doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt toBeam closure = internalPortal false identity doLogic ids disconnectElement toElt fromElt giveNewParent deleteFromCache wrapElt  toBeam closure
+portal doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam closure = internalPortal false identity doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam closure
 
 data Stage = Begin | Middle | End
 
