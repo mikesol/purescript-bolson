@@ -270,7 +270,7 @@ fix
   -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> (obj -> Element interpreter m lock payload)
   -> (Element interpreter m lock payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
+  -> (interpreter -> { id :: String, parent :: String } -> payload)
   -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> Entity logic obj m lock
 fix
