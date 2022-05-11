@@ -1,4 +1,4 @@
-module Deku.Always where
+module Bolson.Always where
 
 import Prelude
 
