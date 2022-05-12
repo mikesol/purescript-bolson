@@ -27,6 +27,7 @@ newtype EventfulElement logic obj m lock = EventfulElement
   (AnEvent m (Entity logic obj m lock))
 
 data Scope = Local String | Global
+
 derive instance Eq Scope
 derive instance Ord Scope
 

@@ -29,6 +29,8 @@ import Unsafe.Coerce (unsafeCoerce)
 
 ----
 
+type Neg1 = -1
+
 newtype MutAr a = MutAr (Array a)
 
 foreign import mutAr :: forall m a. Array a -> m (MutAr a)
@@ -39,29 +41,44 @@ enteq
   :: forall m obj logic lock0 lock1
    . Entity logic obj m lock0
   -> Entity logic obj m lock1
-enteq = unsafeCoerce -- it'd be nice to use proof here...
+enteq = unsafeCoerce -- it'd
+
+type Portal interpreter obj m lock payload =
+  { giveNewParent ::
+      interpreter
+      -> { id :: String, parent :: String, scope :: Scope }
+      -> payload
+  , deleteFromCache :: interpreter -> { id :: String } -> payload
+  , fromElt :: Element interpreter m lock payload -> obj
+  }
 
 internalPortal
   :: forall n s m logic obj interpreter lock0 lock1 payload
-   . Compare n (-1) GT
+   . Compare n Neg1 GT
   => MonadST s m
   => Boolean
   -> (Scope -> Scope)
-  -> (logic -> interpreter -> String -> payload)
-  -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
-  -> (Entity logic obj m lock0 -> Entity logic obj m lock0)
-  -> (obj -> Element interpreter m lock0 payload)
-  -> (Element interpreter m lock0 payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
-  -> (interpreter -> { id :: String } -> payload)
+  -> Flatten logic interpreter obj m lock0 payload
+  -> Portal interpreter obj m lock0 payload
   -> Vect n (Entity logic obj m lock0)
   -> ( Vect n (Entity logic obj m lock1)
        -> (Entity logic obj m lock0 -> Entity logic obj m lock1)
        -> Entity logic obj m lock1
      )
   -> Entity logic obj m lock0
-internalPortal isGlobal scopeF doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam closure = Element' $ fromElt $ Element go
+internalPortal
+  isGlobal
+  scopeF
+  flatArgs@
+    { wrapElt
+    , toElt
+    }
+  { giveNewParent
+  , deleteFromCache
+  , fromElt
+  }
+  toBeam
+  closure = Element' $ fromElt $ Element go
   where
   go psr interpreter = makeEvent \k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
@@ -92,13 +109,16 @@ internalPortal isGlobal scopeF doLogic ids disconnectElement wrapElt toElt fromE
             \{ parent, scope, raiseId } itp ->
               makeEvent \k2 -> do
                 raiseId id
-                for_ parent \pt -> k2 (giveNewParent itp { id, parent: pt, scope })
+                for_ parent \pt -> k2
+                  (giveNewParent itp { id, parent: pt, scope })
                 pure (pure unit)
         )
         idz
-      realized = flatten doLogic ids disconnectElement wrapElt toElt fromElt psr interpreter
+      realized = flatten flatArgs psr
+        interpreter
         ( -- we will likely need some sort of unsafe coerce here...
-             enteq ( closure injectable
+          enteq
+            ( closure injectable
                 ( unsafeCoerce
                     :: Entity logic obj m lock0 -> Entity logic obj m lock1
                 )
@@ -116,69 +136,86 @@ internalPortal isGlobal scopeF doLogic ids disconnectElement wrapElt toElt fromE
 
 globalPortal
   :: forall n s m logic obj interpreter lock payload
-   . Compare n (-1) GT
+   . Compare n Neg1 GT
   => MonadST s m
-  => (logic -> interpreter -> String -> payload)
-  -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
-  -> (Entity logic obj m lock -> Entity logic obj m lock)
-  -> (obj -> Element interpreter m lock payload)
-  -> (Element interpreter m lock payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
-  -> (interpreter -> { id :: String } -> payload)
+  => Flatten logic interpreter obj m lock payload
+  -> Portal interpreter obj m lock payload
   -> Vect n (Entity logic obj m lock)
-  -> ( Vect n (Entity logic obj m lock)       -> Entity logic obj m lock)
+  -> (Vect n (Entity logic obj m lock) -> Entity logic obj m lock)
   -> Entity logic obj m lock
-globalPortal doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam closure = internalPortal true (const Global) doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam (\x _ -> closure x)
+globalPortal
+  flatArgs
+  portalArgs
+  toBeam
+  closure = internalPortal true (const Global) flatArgs
+  portalArgs
+  toBeam
+  (\x _ -> closure x)
 
 portal
   :: forall n s m logic obj interpreter lock payload
-   . Compare n (-1) GT
+   . Compare n Neg1 GT
   => MonadST s m
-  => (logic -> interpreter -> String -> payload)
-  -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
-  -> (Entity logic obj m lock -> Entity logic obj m lock)
-  -> (obj -> Element interpreter m lock payload)
-  -> (Element interpreter m lock payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
-  -> (interpreter -> { id :: String } -> payload)
+  => Flatten logic interpreter obj m lock payload
+  -> Portal interpreter obj m lock payload
   -> Vect n (Entity logic obj m lock)
-  -> (forall lock1. Vect n (Entity logic obj m lock1)
+  -> ( forall lock1
+        . Vect n (Entity logic obj m lock1)
        -> (Entity logic obj m lock -> Entity logic obj m lock1)
        -> Entity logic obj m lock1
      )
   -> Entity logic obj m lock
-portal doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam closure = internalPortal false identity doLogic ids disconnectElement wrapElt toElt fromElt giveNewParent deleteFromCache toBeam closure
+portal
+  flatArgs
+  portalArgs
+  toBeam
+  closure = internalPortal false identity flatArgs
+  portalArgs
+  toBeam
+  closure
 
 data Stage = Begin | Middle | End
+
+type Flatten logic interpreter obj m lock payload =
+  { doLogic :: logic -> interpreter -> String -> payload
+  , ids :: interpreter -> m String
+  , disconnectElement ::
+      interpreter
+      -> { id :: String, parent :: String, scope :: Scope }
+      -> payload
+  , wrapElt :: Entity logic obj m lock -> Entity logic obj m lock
+  , toElt :: obj -> Element interpreter m lock payload
+  }
 
 flatten
   :: forall s m obj logic interpreter lock payload
    . Applicative m
   => MonadST s m
-  => (logic -> interpreter -> String -> payload)
-  -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
-  -> (Entity logic obj m lock -> Entity logic obj m lock)
-  -> (obj -> Element interpreter m lock payload)
-  -> (Element interpreter m lock payload -> obj)
+  => Flatten logic interpreter obj m lock payload
   -> PSR m
   -> interpreter
   -> Entity logic obj m lock
   -> AnEvent m payload
 flatten
-  doLogic
-  ids
-  disconnectElement
-  wrapElt
-  toElt
-  fromElt
+  flatArgs@
+    { doLogic
+    , ids
+    , disconnectElement
+    , wrapElt
+    , toElt
+    }
   psr
   interpreter = case _ of
-  FixedChildren' (FixedChildren f) -> oneOfMap (flatten doLogic ids disconnectElement wrapElt toElt fromElt psr interpreter) f
+  FixedChildren' (FixedChildren f) -> oneOfMap
+    ( flatten flatArgs psr
+        interpreter
+    )
+    f
   EventfulElement' (EventfulElement e) -> keepLatest
-    (map (flatten doLogic ids disconnectElement wrapElt toElt fromElt psr interpreter) e)
+    ( map
+        (flatten flatArgs psr interpreter)
+        e
+    )
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
     makeEvent \(k :: payload -> m Unit) -> do
@@ -228,12 +265,7 @@ flatten
                   void $ liftST $ Ref.write Middle stageRef
                   c1 <- subscribe
                     ( flatten
-                        doLogic
-                        ids
-                        disconnectElement
-                        wrapElt
-                        toElt
-                        fromElt
+                        flatArgs
                         { parent: psr.parent
                         , scope: myScope
                         , raiseId: \id -> do
@@ -262,25 +294,22 @@ flatten
   where
   element (Element e) = e psr interpreter
 
+type Fix interpreter obj m lock payload =
+  { connectToParent ::
+      interpreter -> { id :: String, parent :: String } -> payload
+  , fromElt :: Element interpreter m lock payload -> obj
+  }
+
 fix
   :: forall s m obj logic interpreter lock payload
-   . MonadST s m => (logic -> interpreter -> String -> payload)
-  -> (interpreter -> m String)
-  -> (interpreter -> { id :: String, parent :: String, scope :: Scope } -> payload)
-  -> (Entity logic obj m lock -> Entity logic obj m lock)
-  -> (obj -> Element interpreter m lock payload)
-  -> (Element interpreter m lock payload -> obj)
-  -> (interpreter -> { id :: String, parent :: String } -> payload)
+   . MonadST s m
+  => Flatten logic interpreter obj m lock payload
+  -> Fix interpreter obj m lock payload
   -> (Entity logic obj m lock -> Entity logic obj m lock)
   -> Entity logic obj m lock
 fix
-  doLogic
-  ids
-  disconnectElement
-  wrapElt
-  toElt
-  fromElt
-  connectToParent
+  flatArgs
+  { connectToParent, fromElt }
   f = Element' $ fromElt $ Element go
   where
   go i interpret = makeEvent \k -> do
@@ -291,15 +320,14 @@ fix
           Nothing -> pure unit
           -- only do the connection if not silence
           Just r -> for_ ii.parent \p' ->
-            when (r /= p') (ii.raiseId r *> k0 (connectToParent interpret { id: r, parent: p' }))
+            when (r /= p')
+              ( ii.raiseId r *> k0
+                  (connectToParent interpret { id: r, parent: p' })
+              )
         pure (pure unit)
     subscribe
-      ( flatten doLogic
-          ids
-          disconnectElement
-          wrapElt
-          toElt
-          fromElt
+      ( flatten
+          flatArgs
           { parent: i.parent
           , scope: i.scope
           , raiseId: \s -> do
@@ -319,10 +347,10 @@ switcher
   -> Entity logic obj m lock
 switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
   $ memoize (counter event) \cenv -> map
-    ( \(p /\ n) -> bang (Insert $ f p) <|>
-        ((const Remove) <$> filter (eq (n + 1) <<< snd) cenv)
-    )
-    cenv
+      ( \(p /\ n) -> bang (Insert $ f p) <|>
+          ((const Remove) <$> filter (eq (n + 1) <<< snd) cenv)
+      )
+      cenv
   where
   -- counter :: forall a. AnEvent m a → AnEvent m (a /\ Int)
   counter ev = mapAccum fn ev 0
