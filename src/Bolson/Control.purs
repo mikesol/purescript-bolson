@@ -43,25 +43,26 @@ enteq
   -> Entity logic obj m lock1
 enteq = unsafeCoerce -- it'd
 
-type Portal interpreter obj m lock payload =
+type Portal specialization interpreter obj m lock payload =
   { giveNewParent ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope }
+      -> specialization
       -> payload
   , deleteFromCache :: interpreter -> { id :: String } -> payload
   , fromElt :: Element interpreter m lock payload -> obj
   }
 
 internalPortal
-  :: forall n s m logic obj interpreter lock0 lock1 payload
+  :: forall n s m logic obj specialization interpreter lock0 lock1 payload
    . Compare n Neg1 GT
   => MonadST s m
   => Boolean
   -> (Scope -> Scope)
   -> Flatten logic interpreter obj m lock0 payload
-  -> Portal interpreter obj m lock0 payload
+  -> Portal specialization interpreter obj m lock0 payload
   -> Vect n (Entity logic obj m lock0)
-  -> ( Vect n (Entity logic obj m lock1)
+  -> ( Vect n (specialization -> Entity logic obj m lock1)
        -> (Entity logic obj m lock0 -> Entity logic obj m lock1)
        -> Entity logic obj m lock1
      )
@@ -105,12 +106,12 @@ internalPortal
       -- instead, it is always managed inside a referentially transparent node
       -- that can be properly connected and disconnected
       injectable = map
-        ( \id -> Element' $ fromElt $ Element
+        ( \id specialization -> Element' $ fromElt $ Element
             \{ parent, scope, raiseId } itp ->
               makeEvent \k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope })
+                  (giveNewParent itp { id, parent: pt, scope } specialization)
                 pure (pure unit)
         )
         idz
@@ -135,13 +136,13 @@ internalPortal
       join (liftST $ Ref.read av2)
 
 globalPortal
-  :: forall n s m logic obj interpreter lock payload
+  :: forall n s m logic obj specialization interpreter lock payload
    . Compare n Neg1 GT
   => MonadST s m
   => Flatten logic interpreter obj m lock payload
-  -> Portal interpreter obj m lock payload
+  -> Portal specialization interpreter obj m lock payload
   -> Vect n (Entity logic obj m lock)
-  -> (Vect n (Entity logic obj m lock) -> Entity logic obj m lock)
+  -> (Vect n (specialization -> Entity logic obj m lock) -> Entity logic obj m lock)
   -> Entity logic obj m lock
 globalPortal
   flatArgs
@@ -153,14 +154,14 @@ globalPortal
   (\x _ -> closure x)
 
 portal
-  :: forall n s m logic obj interpreter lock payload
+  :: forall n s m logic obj specialization interpreter lock payload
    . Compare n Neg1 GT
   => MonadST s m
   => Flatten logic interpreter obj m lock payload
-  -> Portal interpreter obj m lock payload
+  -> Portal specialization interpreter obj m lock payload
   -> Vect n (Entity logic obj m lock)
   -> ( forall lock1
-        . Vect n (Entity logic obj m lock1)
+        . Vect n (specialization -> Entity logic obj m lock1)
        -> (Entity logic obj m lock -> Entity logic obj m lock1)
        -> Entity logic obj m lock1
      )
