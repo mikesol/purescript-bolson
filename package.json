@@ -1,6 +1,6 @@
 {
 	"name": "purescript-bolson",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"description": "A FRP framework builder.",
 	"scripts": {},
 	"keywords": [],

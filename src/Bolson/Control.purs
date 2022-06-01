@@ -179,7 +179,7 @@ portal
 data Stage = Begin | Middle | End
 
 type Flatten logic interpreter obj m lock payload =
-  { doLogic :: logic -> interpreter -> Array String -> payload
+  { doLogic :: logic -> interpreter -> String -> payload
   , ids :: interpreter -> m String
   , disconnectElement ::
       interpreter
@@ -236,7 +236,7 @@ flatten
             c0 <- subscribe inner \kid' -> do
               stage <- liftST $ Ref.read stageRef
               case kid', stage of
-                Logic logic, Middle -> (liftST $ Ref.read myIds) >>=
+                Logic logic, Middle -> (liftST $ Ref.read myIds) >>= traverse_
                   (k <<< doLogic logic interpreter)
                 Remove, Middle -> do
                   void $ liftST $ Ref.write End stageRef
