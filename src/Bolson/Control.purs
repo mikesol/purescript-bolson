@@ -1,7 +1,9 @@
 module Bolson.Control
   ( flatten
   , globalPortal
+  , globalPortalSimple
   , portal
+  , portalSimple
   , fix
   , switcher
   ) where
@@ -43,6 +45,12 @@ enteq
   -> Entity logic obj m lock1
 enteq = unsafeCoerce -- it'd
 
+enteq2
+  :: forall m obj logic lock0 lock1 payload
+   . Entity logic (obj lock0 payload) m lock0
+  -> Entity logic (obj lock1 payload) m lock1
+enteq2 = unsafeCoerce -- it'd
+
 type Portal logic specialization interpreter obj m lock payload =
   { giveNewParent ::
       interpreter
@@ -53,6 +61,94 @@ type Portal logic specialization interpreter obj m lock payload =
   , deleteFromCache :: interpreter -> { id :: String } -> payload
   , fromElt :: Element interpreter m lock payload -> obj
   }
+
+type PortalSimple :: forall k. k -> Type -> Type -> Type -> (Type -> Type) -> Type -> Type -> Type
+type PortalSimple logic specialization interpreter obj m lock payload =
+  { giveNewParent ::
+      interpreter
+      -> { id :: String, parent :: String, scope :: Scope }
+      -> specialization
+      -> payload
+  , deleteFromCache :: interpreter -> { id :: String } -> payload
+  , fromElt :: Element interpreter m lock payload -> obj
+  }
+
+internalPortalSimple
+  :: forall n s m logic obj specialization interpreter lock0 lock1 payload
+   . Compare n Neg1 GT
+  => MonadST s m
+  => Boolean
+  -> (Scope -> Scope)
+  -> Flatten logic interpreter (obj lock0 payload) m lock0 payload
+  -> PortalSimple logic specialization interpreter (obj lock0 payload) m lock0 payload
+  -> Vect n (obj lock0 payload)
+  -> ( Vect n (specialization -> (obj lock1 payload))
+       -> (obj lock0 payload -> obj lock1 payload)
+       -> Entity logic (obj lock1 payload) m lock1
+     )
+  -> Entity logic (obj lock0 payload) m lock0
+internalPortalSimple
+  isGlobal
+  scopeF
+  flatArgs@{ toElt }
+  { giveNewParent
+  , deleteFromCache
+  , fromElt
+  }
+  toBeam
+  closure = Element' $ fromElt $ Element go
+  where
+  go psr interpreter = makeEvent \k -> do
+    av <- mutAr (map (const "") $ toArray toBeam)
+    let
+      actualized = oneOf $ mapWithIndex
+        ( \ix i -> toElt i # \(Element elt) -> elt
+              { parent: Nothing
+              , scope: scopeF psr.scope
+              , raiseId: \id -> unsafeUpdateMutAr ix id av
+              }
+              interpreter
+        )
+        (toArray toBeam)
+    u0 <- subscribe actualized k
+    av2 <- liftST $ Ref.new (pure unit)
+    let
+      asIds :: Array String -> Vect n String
+      asIds = unsafeCoerce
+    idz <- asIds <$> readAr av
+    let
+      -- we never connect or disconnect the referentially opaque node
+      -- instead, it is always managed inside a referentially transparent node
+      -- that can be properly connected and disconnected
+      injectable = map
+        ( \id specialization -> fromElt $ Element
+            \{ parent, scope, raiseId } itp ->
+              makeEvent \k2 -> do
+                raiseId id
+                for_ parent \pt -> k2
+                  (giveNewParent itp { id, parent: pt, scope } specialization)
+                pure (pure unit)
+        )
+        idz
+      realized = flatten flatArgs psr
+        interpreter
+        ( -- we will likely need some sort of unsafe coerce here...
+          enteq2
+            ( closure ((unsafeCoerce :: Vect n (specialization -> (obj lock0 payload)) -> Vect n (specialization -> (obj lock1 payload))) injectable)
+                ( unsafeCoerce
+                    :: obj lock0 payload -> obj lock1 payload
+                )
+            )
+        )
+    u <- subscribe realized k
+    void $ liftST $ Ref.write u av2
+    -- cancel immediately, as it should be run synchronously
+    -- so if this actually does something then we have a problem
+    pure do
+      u0
+      when (not isGlobal) $ for_ (toArray idz) \id -> k
+        (deleteFromCache interpreter { id })
+      join (liftST $ Ref.read av2)
 
 internalPortal
   :: forall n s m logic obj specialization interpreter lock0 lock1 payload
@@ -154,6 +250,26 @@ globalPortal
   toBeam
   (\x _ -> closure x)
 
+globalPortalSimple
+  :: forall n s m logic obj specialization interpreter lock payload
+   . Compare n Neg1 GT
+  => MonadST s m
+  => Flatten logic interpreter (obj lock payload) m lock payload
+  -> PortalSimple logic specialization interpreter (obj lock payload) m lock payload
+  -> Vect n (obj lock payload)
+  -> ( Vect n (specialization -> obj lock payload)
+       -> Entity logic (obj lock payload) m lock
+     )
+  -> Entity logic (obj lock payload) m lock
+globalPortalSimple
+  flatArgs
+  portalArgs
+  toBeam
+  closure = internalPortalSimple true (const Global) flatArgs
+  portalArgs
+  toBeam
+  (\x _ -> closure x)
+
 portal
   :: forall n s m logic obj specialization interpreter lock payload
    . Compare n Neg1 GT
@@ -172,6 +288,28 @@ portal
   portalArgs
   toBeam
   closure = internalPortal false identity flatArgs
+  portalArgs
+  toBeam
+  closure
+
+portalSimple
+  :: forall n s m logic obj specialization interpreter lock payload
+   . Compare n Neg1 GT
+  => MonadST s m
+  => Flatten logic interpreter (obj lock payload) m lock payload
+  -> PortalSimple logic specialization interpreter (obj lock payload) m lock payload
+  -> Vect n (obj lock payload)
+  -> ( forall lock1
+        . Vect n (specialization -> obj lock payload)
+       -> (obj lock payload -> obj lock1 payload)
+       -> Entity logic (obj lock1 payload) m lock1
+     )
+  -> Entity logic (obj lock payload) m lock
+portalSimple
+  flatArgs
+  portalArgs
+  toBeam
+  closure = internalPortalSimple false identity flatArgs
   portalArgs
   toBeam
   closure
