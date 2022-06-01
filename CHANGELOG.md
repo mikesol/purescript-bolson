@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.0.3] - June 1 2022
+
+### Changed
+
+- Avoids the need for flatten to wrap things in a neutral element. This makes it more flexible, which allows for easier embedding when it acts as a _producer_, meaning that it produces an arbitrary element that we don't know how to deal with. In this case, imposing the obligation to wrap it on the consumer makes the abstraction leaky, as we want the consumer to be polymorphic.
+
 ## [0.0.2] - May 12 2022
 
 ### Changed

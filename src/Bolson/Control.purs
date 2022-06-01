@@ -43,12 +43,13 @@ enteq
   -> Entity logic obj m lock1
 enteq = unsafeCoerce -- it'd
 
-type Portal specialization interpreter obj m lock payload =
+type Portal logic specialization interpreter obj m lock payload =
   { giveNewParent ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope }
       -> specialization
       -> payload
+  , wrapElt :: Entity logic obj m lock -> Entity logic obj m lock
   , deleteFromCache :: interpreter -> { id :: String } -> payload
   , fromElt :: Element interpreter m lock payload -> obj
   }
@@ -60,7 +61,7 @@ internalPortal
   => Boolean
   -> (Scope -> Scope)
   -> Flatten logic interpreter obj m lock0 payload
-  -> Portal specialization interpreter obj m lock0 payload
+  -> Portal logic specialization interpreter obj m lock0 payload
   -> Vect n (Entity logic obj m lock0)
   -> ( Vect n (specialization -> Entity logic obj m lock1)
        -> (Entity logic obj m lock0 -> Entity logic obj m lock1)
@@ -70,13 +71,11 @@ internalPortal
 internalPortal
   isGlobal
   scopeF
-  flatArgs@
-    { wrapElt
-    , toElt
-    }
+  flatArgs@{ toElt }
   { giveNewParent
   , deleteFromCache
   , fromElt
+  , wrapElt
   }
   toBeam
   closure = Element' $ fromElt $ Element go
@@ -140,9 +139,11 @@ globalPortal
    . Compare n Neg1 GT
   => MonadST s m
   => Flatten logic interpreter obj m lock payload
-  -> Portal specialization interpreter obj m lock payload
+  -> Portal logic specialization interpreter obj m lock payload
   -> Vect n (Entity logic obj m lock)
-  -> (Vect n (specialization -> Entity logic obj m lock) -> Entity logic obj m lock)
+  -> ( Vect n (specialization -> Entity logic obj m lock)
+       -> Entity logic obj m lock
+     )
   -> Entity logic obj m lock
 globalPortal
   flatArgs
@@ -158,7 +159,7 @@ portal
    . Compare n Neg1 GT
   => MonadST s m
   => Flatten logic interpreter obj m lock payload
-  -> Portal specialization interpreter obj m lock payload
+  -> Portal logic specialization interpreter obj m lock payload
   -> Vect n (Entity logic obj m lock)
   -> ( forall lock1
         . Vect n (specialization -> Entity logic obj m lock1)
@@ -178,13 +179,12 @@ portal
 data Stage = Begin | Middle | End
 
 type Flatten logic interpreter obj m lock payload =
-  { doLogic :: logic -> interpreter -> String -> payload
+  { doLogic :: logic -> interpreter -> Array String -> payload
   , ids :: interpreter -> m String
   , disconnectElement ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope }
       -> payload
-  , wrapElt :: Entity logic obj m lock -> Entity logic obj m lock
   , toElt :: obj -> Element interpreter m lock payload
   }
 
@@ -202,7 +202,6 @@ flatten
     { doLogic
     , ids
     , disconnectElement
-    , wrapElt
     , toElt
     }
   psr
@@ -230,20 +229,20 @@ flatten
             myUnsub <- liftST $ Ref.new (pure unit)
             eltsUnsubId <- ids interpreter
             eltsUnsub <- liftST $ Ref.new (pure unit)
-            myId <- liftST $ Ref.new Nothing
+            myIds <- liftST $ Ref.new []
             myImmediateCancellation <- liftST $ Ref.new (pure unit)
             myScope <- Local <$> ids interpreter
             stageRef <- liftST $ Ref.new Begin
             c0 <- subscribe inner \kid' -> do
               stage <- liftST $ Ref.read stageRef
               case kid', stage of
-                Logic logic, Middle -> (liftST $ Ref.read myId) >>= traverse_
+                Logic logic, Middle -> (liftST $ Ref.read myIds) >>=
                   (k <<< doLogic logic interpreter)
                 Remove, Middle -> do
                   void $ liftST $ Ref.write End stageRef
                   let
                     mic =
-                      ( (liftST $ Ref.read myId) >>= traverse_ \old ->
+                      ( (liftST $ Ref.read myIds) >>= traverse_ \old ->
                           for_ psr.parent \pnt -> k
                             ( disconnectElement interpreter
                                 { id: old, parent: pnt, scope: myScope }
@@ -270,16 +269,14 @@ flatten
                         { parent: psr.parent
                         , scope: myScope
                         , raiseId: \id -> do
-                            void $ liftST $ Ref.write (Just id) myId
+                            void $ liftST $ Ref.modify (append [ id ]) myIds
                         }
                         interpreter
                         -- hack to make sure that kid only ever raises its
                         -- ID once
                         -- if it is anything other than an element we wrap it in one
                         -- otherwise, we'd risk raising many ids to a parent
-                        case kid of
-                          Element' _ -> kid
-                          _ -> wrapElt kid
+                        kid
                     )
                     k
                   void $ liftST $ Ref.modify (Object.insert eltsUnsubId c1)
