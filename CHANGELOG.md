@@ -5,18 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [0.0.6] - June 6 2022
+
+### Changed
+
+- Adds more nuanced `Portal` implementations.
+
 ## [0.0.5] - June 1 2022
 
 ### Added
 
 - Adds portal for simple objects. There are objects that we want to scope in a lock but can never be multiple or eventful.
-.
+
+
 ## [0.0.4] - June 1 2022
 
 ### Changed
 
 - Returns `doLogic` to the old signature. Note that this will be called multiple times now for multiple `id`-s!
-.
+
 ## [0.0.3] - June 1 2022
 
 ### Changed
