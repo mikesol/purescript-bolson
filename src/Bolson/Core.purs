@@ -34,6 +34,7 @@ derive instance Ord Scope
 type PSR m =
   { parent :: Maybe String
   , scope :: Scope
+  , dyn :: Maybe String
   , raiseId :: String -> m Unit
   }
 

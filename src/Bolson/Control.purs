@@ -44,7 +44,7 @@ foreign import readAr :: forall m a. MutAr a -> m (Array a)
 type Portal logic specialization interpreter obj1 obj2 m lock payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope }
+      -> { id :: String, parent :: String, scope :: Scope, dyn :: Maybe String }
       -> specialization
       -> payload
   , wrapElt ::
@@ -59,7 +59,7 @@ type Portal logic specialization interpreter obj1 obj2 m lock payload =
 type PortalComplex logic specialization interpreter obj1 obj2 m lock payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope }
+      -> { id :: String, parent :: String, scope :: Scope, dyn :: Maybe String }
       -> specialization
       -> payload
   , wrapElt ::
@@ -71,10 +71,11 @@ type PortalComplex logic specialization interpreter obj1 obj2 m lock payload =
   , toEltO1 :: obj1 lock payload -> Element interpreter m lock payload
   , toEltO2 :: obj2 lock payload -> Element interpreter m lock payload
   }
+
 type PortalSimple specialization interpreter obj1 obj2 m lock payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope }
+      -> { id :: String, parent :: String, scope :: Scope, dyn :: Maybe String }
       -> specialization
       -> payload
   , deleteFromCache :: interpreter -> { id :: String } -> payload
@@ -116,6 +117,7 @@ internalPortalSimpleComplex
       actualized = oneOf $ mapWithIndex
         ( \ix i -> toElt i # \(Element elt) -> elt
             { parent: Nothing
+            , dyn: psr.dyn
             , scope: scopeF psr.scope
             , raiseId: \id -> unsafeUpdateMutAr ix id av
             }
@@ -134,18 +136,23 @@ internalPortalSimpleComplex
       -- that can be properly connected and disconnected
       injectable = map
         ( \id specialization -> fromEltO1 $ Element
-            \{ parent, scope, raiseId } itp ->
+            \{ parent, dyn, scope, raiseId } itp ->
               makeEvent \k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope } specialization)
+                  ( giveNewParent itp { id, parent: pt, scope, dyn }
+                      specialization
+                  )
                 pure (pure unit)
         )
         idz
       realized = flatten flatArgs psr
         interpreter
         ( -- we will likely need some sort of unsafe coerce here...
-          (unsafeCoerce :: Entity logic (obj2 lock1 payload) m lock1 -> Entity logic (obj2 lock0 payload) m lock0)
+          ( unsafeCoerce
+              :: Entity logic (obj2 lock1 payload) m lock1
+              -> Entity logic (obj2 lock0 payload) m lock0
+          )
             ( closure
                 ( ( unsafeCoerce
                       :: Vect n (specialization -> (obj1 lock0 payload))
@@ -204,6 +211,7 @@ internalPortalComplexComplex
         ( \ix -> Lazy.fix \f i -> case i of
             Element' beamable -> toElt beamable # \(Element elt) -> elt
               { parent: Nothing
+              , dyn: psr.dyn
               , scope: scopeF psr.scope
               , raiseId: \id -> unsafeUpdateMutAr ix id av
               }
@@ -223,11 +231,11 @@ internalPortalComplexComplex
       -- that can be properly connected and disconnected
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
-            \{ parent, scope, raiseId } itp ->
+            \{ parent, scope, dyn, raiseId } itp ->
               makeEvent \k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope } specialization)
+                  (giveNewParent itp { id, parent: pt, scope, dyn } specialization)
                 pure (pure unit)
         )
         idz
@@ -306,6 +314,7 @@ internalPortalComplexSimple
             Element' beamable -> toEltO1 beamable # \(Element elt) -> elt
               { parent: Nothing
               , scope: scopeF psr.scope
+              , dyn: psr.dyn
               , raiseId: \id -> unsafeUpdateMutAr ix id av
               }
               interpreter
@@ -324,31 +333,35 @@ internalPortalComplexSimple
       -- that can be properly connected and disconnected
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
-            \{ parent, scope, raiseId } itp ->
+            \{ parent, scope, raiseId, dyn } itp ->
               makeEvent \k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope } specialization)
+                  (giveNewParent itp { id, parent: pt, scope, dyn } specialization)
                 pure (pure unit)
         )
         idz
       Element realized = toEltO2
         ( -- we will likely need some sort of unsafe coerce here...
           (unsafeCoerce :: obj2 lock1 payload -> obj2 lock0 payload)
-            ( ( closure (( unsafeCoerce
-                      :: Vect n
-                           ( specialization
-                             -> Entity logic (obj1 lock0 payload) m lock0
-                           )
-                      -> Vect n
-                           ( specialization
-                             -> Entity logic (obj1 lock1 payload) m lock1
-                           )
-                  ) injectable)
-                ( unsafeCoerce
-                    :: Entity logic (obj1 lock0 payload) m lock0 -> Entity logic (obj1 lock1 payload) m lock1
-                )
-            ))
+            ( ( closure
+                  ( ( unsafeCoerce
+                        :: Vect n
+                             ( specialization
+                               -> Entity logic (obj1 lock0 payload) m lock0
+                             )
+                        -> Vect n
+                             ( specialization
+                               -> Entity logic (obj1 lock1 payload) m lock1
+                             )
+                    ) injectable
+                  )
+                  ( unsafeCoerce
+                      :: Entity logic (obj1 lock0 payload) m lock0
+                      -> Entity logic (obj1 lock1 payload) m lock1
+                  )
+              )
+            )
         )
     u <- subscribe (realized psr interpreter) k
     void $ liftST $ Ref.write u av2
@@ -489,6 +502,7 @@ portalComplexSimple
   portalArgs
   toBeam
   closure
+
 data Stage = Begin | Middle | End
 
 type Flatten logic interpreter obj m lock payload =
@@ -533,8 +547,9 @@ flatten
   DynamicChildren' (DynamicChildren children) ->
     makeEvent \(k :: payload -> m Unit) -> do
       cancelInner <- liftST $ Ref.new Object.empty
-      cancelOuter <-
-        -- each child gets its own scope
+      cancelOuter <- do
+        -- dyn acts a global scope for dynamic objects
+        myDyn <- ids interpreter
         subscribe children \inner ->
           do
             -- holds the previous id
@@ -544,6 +559,7 @@ flatten
             eltsUnsub <- liftST $ Ref.new (pure unit)
             myIds <- liftST $ Ref.new []
             myImmediateCancellation <- liftST $ Ref.new (pure unit)
+            -- each child gets its own scope
             myScope <- Local <$> ids interpreter
             stageRef <- liftST $ Ref.new Begin
             c0 <- subscribe inner \kid' -> do
@@ -581,6 +597,7 @@ flatten
                         flatArgs
                         { parent: psr.parent
                         , scope: myScope
+                        , dyn: Just myDyn
                         , raiseId: \id -> do
                             void $ liftST $ Ref.modify (append [ id ]) myIds
                         }
@@ -616,7 +633,9 @@ fixComplexComplex
    . MonadST s m
   => Flatten logic interpreter obj m lock payload
   -> Fix interpreter obj m lock payload
-  -> (Entity logic (obj lock payload) m lock -> Entity logic (obj lock payload) m lock)
+  -> ( Entity logic (obj lock payload) m lock
+       -> Entity logic (obj lock payload) m lock
+     )
   -> Entity logic (obj lock payload) m lock
 fixComplexComplex
   flatArgs
@@ -641,6 +660,7 @@ fixComplexComplex
           flatArgs
           { parent: i.parent
           , scope: i.scope
+          , dyn: i.dyn
           , raiseId: \s -> do
               i.raiseId s
               void $ liftST $ Ref.write (Just s) av
