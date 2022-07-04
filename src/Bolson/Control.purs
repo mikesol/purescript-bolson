@@ -41,7 +41,7 @@ foreign import mutAr :: forall m a. Array a -> m (MutAr a)
 foreign import unsafeUpdateMutAr :: forall m a. Int -> a -> MutAr a -> m Unit
 foreign import readAr :: forall m a. MutAr a -> m (Array a)
 
-type Portal logic specialization interpreter obj1 obj2 m lock payload =
+type Portal logic specialization interpreter obj1 obj2 m r lock payload =
   { giveNewParent ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope, dyn :: Maybe String }
@@ -51,12 +51,12 @@ type Portal logic specialization interpreter obj1 obj2 m lock payload =
       Entity logic (obj1 lock payload) m lock
       -> Entity logic (obj1 lock payload) m lock
   , deleteFromCache :: interpreter -> { id :: String } -> payload
-  , fromEltO1 :: Element interpreter m lock payload -> obj1 lock payload
-  , fromEltO2 :: Element interpreter m lock payload -> obj2 lock payload
-  , toElt :: obj1 lock payload -> Element interpreter m lock payload
+  , fromEltO1 :: Element interpreter m r lock payload -> obj1 lock payload
+  , fromEltO2 :: Element interpreter m r lock payload -> obj2 lock payload
+  , toElt :: obj1 lock payload -> Element interpreter m r lock payload
   }
 
-type PortalComplex logic specialization interpreter obj1 obj2 m lock payload =
+type PortalComplex logic specialization interpreter obj1 obj2 m r lock payload =
   { giveNewParent ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope, dyn :: Maybe String }
@@ -66,32 +66,33 @@ type PortalComplex logic specialization interpreter obj1 obj2 m lock payload =
       Entity logic (obj1 lock payload) m lock
       -> Entity logic (obj1 lock payload) m lock
   , deleteFromCache :: interpreter -> { id :: String } -> payload
-  , fromEltO1 :: Element interpreter m lock payload -> obj1 lock payload
-  , fromEltO2 :: Element interpreter m lock payload -> obj2 lock payload
-  , toEltO1 :: obj1 lock payload -> Element interpreter m lock payload
-  , toEltO2 :: obj2 lock payload -> Element interpreter m lock payload
+  , fromEltO1 :: Element interpreter m r lock payload -> obj1 lock payload
+  , fromEltO2 :: Element interpreter m r lock payload -> obj2 lock payload
+  , toEltO1 :: obj1 lock payload -> Element interpreter m r lock payload
+  , toEltO2 :: obj2 lock payload -> Element interpreter m r lock payload
   }
 
-type PortalSimple specialization interpreter obj1 obj2 m lock payload =
+type PortalSimple specialization interpreter obj1 obj2 m r lock payload =
   { giveNewParent ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope, dyn :: Maybe String }
       -> specialization
       -> payload
   , deleteFromCache :: interpreter -> { id :: String } -> payload
-  , fromEltO1 :: Element interpreter m lock payload -> obj1 lock payload
-  , fromEltO2 :: Element interpreter m lock payload -> obj2 lock payload
-  , toElt :: obj1 lock payload -> Element interpreter m lock payload
+  , fromEltO1 :: Element interpreter m r lock payload -> obj1 lock payload
+  , fromEltO2 :: Element interpreter m r lock payload -> obj2 lock payload
+  , toElt :: obj1 lock payload -> Element interpreter m r lock payload
   }
 
 internalPortalSimpleComplex
-  :: forall n s m logic obj1 obj2 specialization interpreter lock0 lock1 payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock0 lock1
+       payload
    . Compare n Neg1 GT
   => MonadST s m
   => Boolean
   -> (Scope -> Scope)
-  -> Flatten logic interpreter obj2 m lock0 payload
-  -> PortalSimple specialization interpreter obj1 obj2 m lock0 payload
+  -> Flatten logic interpreter obj2 m r lock0 payload
+  -> PortalSimple specialization interpreter obj1 obj2 m r lock0 payload
   -> Vect n (obj1 lock0 payload)
   -> ( Vect n (specialization -> (obj1 lock1 payload))
        -> (obj1 lock0 payload -> obj1 lock1 payload)
@@ -116,11 +117,12 @@ internalPortalSimpleComplex
     let
       actualized = oneOf $ mapWithIndex
         ( \ix i -> toElt i # \(Element elt) -> elt
-            { parent: Nothing
-            , dyn: psr.dyn
-            , scope: scopeF psr.scope
-            , raiseId: \id -> unsafeUpdateMutAr ix id av
-            }
+            ( psr
+                { parent = Nothing
+                , scope = scopeF psr.scope
+                , raiseId = \id -> unsafeUpdateMutAr ix id av
+                }
+            )
             interpreter
         )
         (toArray toBeam)
@@ -175,13 +177,14 @@ internalPortalSimpleComplex
       join (liftST $ Ref.read av2)
 
 internalPortalComplexComplex
-  :: forall n s m logic obj1 obj2 specialization interpreter lock0 lock1 payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock0 lock1
+       payload
    . Compare n Neg1 GT
   => MonadST s m
   => Boolean
   -> (Scope -> Scope)
-  -> Flatten logic interpreter obj2 m lock0 payload
-  -> Portal logic specialization interpreter obj1 obj2 m lock0 payload
+  -> Flatten logic interpreter obj2 m r lock0 payload
+  -> Portal logic specialization interpreter obj1 obj2 m r lock0 payload
   -> Vect n (Entity logic (obj1 lock0 payload) m lock0)
   -> ( Vect n (specialization -> Entity logic (obj1 lock1 payload) m lock1)
        -> ( Entity logic (obj1 lock0 payload) m lock0
@@ -210,11 +213,12 @@ internalPortalComplexComplex
       actualized = oneOf $ mapWithIndex
         ( \ix -> Lazy.fix \f i -> case i of
             Element' beamable -> toElt beamable # \(Element elt) -> elt
-              { parent: Nothing
-              , dyn: psr.dyn
-              , scope: scopeF psr.scope
-              , raiseId: \id -> unsafeUpdateMutAr ix id av
-              }
+              ( psr
+                  { parent = Nothing
+                  , scope = scopeF psr.scope
+                  , raiseId = \id -> unsafeUpdateMutAr ix id av
+                  }
+              )
               interpreter
             _ -> f (wrapElt i)
         )
@@ -235,7 +239,9 @@ internalPortalComplexComplex
               makeEvent \k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope, dyn } specialization)
+                  ( giveNewParent itp { id, parent: pt, scope, dyn }
+                      specialization
+                  )
                 pure (pure unit)
         )
         idz
@@ -275,12 +281,13 @@ internalPortalComplexComplex
       join (liftST $ Ref.read av2)
 
 internalPortalComplexSimple
-  :: forall n s m logic obj1 obj2 specialization interpreter lock0 lock1 payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock0 lock1
+       payload
    . Compare n Neg1 GT
   => MonadST s m
   => Boolean
   -> (Scope -> Scope)
-  -> PortalComplex logic specialization interpreter obj1 obj2 m lock0 payload
+  -> PortalComplex logic specialization interpreter obj1 obj2 m r lock0 payload
   -> Vect n (Entity logic (obj1 lock0 payload) m lock0)
   -> ( Vect n
          ( specialization
@@ -312,11 +319,12 @@ internalPortalComplexSimple
       actualized = oneOf $ mapWithIndex
         ( \ix -> Lazy.fix \f i -> case i of
             Element' beamable -> toEltO1 beamable # \(Element elt) -> elt
-              { parent: Nothing
-              , scope: scopeF psr.scope
-              , dyn: psr.dyn
-              , raiseId: \id -> unsafeUpdateMutAr ix id av
-              }
+              ( psr
+                  { parent = Nothing
+                  , scope = scopeF psr.scope
+                  , raiseId = \id -> unsafeUpdateMutAr ix id av
+                  }
+              )
               interpreter
             _ -> f (wrapElt i)
         )
@@ -337,7 +345,9 @@ internalPortalComplexSimple
               makeEvent \k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope, dyn } specialization)
+                  ( giveNewParent itp { id, parent: pt, scope, dyn }
+                      specialization
+                  )
                 pure (pure unit)
         )
         idz
@@ -374,11 +384,11 @@ internalPortalComplexSimple
       join (liftST $ Ref.read av2)
 
 globalPortalComplexComplex
-  :: forall n s m logic obj1 obj2 specialization interpreter lock payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
   => MonadST s m
-  => Flatten logic interpreter obj2 m lock payload
-  -> Portal logic specialization interpreter obj1 obj2 m lock payload
+  => Flatten logic interpreter obj2 m r lock payload
+  -> Portal logic specialization interpreter obj1 obj2 m r lock payload
   -> Vect n (Entity logic (obj1 lock payload) m lock)
   -> ( Vect n (specialization -> Entity logic (obj1 lock payload) m lock)
        -> Entity logic (obj2 lock payload) m lock
@@ -394,11 +404,11 @@ globalPortalComplexComplex
   (\x _ -> closure x)
 
 globalPortalSimpleComplex
-  :: forall n s m logic obj1 obj2 specialization interpreter lock payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
   => MonadST s m
-  => Flatten logic interpreter obj2 m lock payload
-  -> PortalSimple specialization interpreter obj1 obj2 m lock
+  => Flatten logic interpreter obj2 m r lock payload
+  -> PortalSimple specialization interpreter obj1 obj2 m r lock
        payload
   -> Vect n (obj1 lock payload)
   -> ( Vect n (specialization -> obj1 lock payload)
@@ -415,10 +425,10 @@ globalPortalSimpleComplex
   (\x _ -> closure x)
 
 globalPortalComplexSimple
-  :: forall n s m logic obj1 obj2 specialization interpreter lock payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
   => MonadST s m
-  => PortalComplex logic specialization interpreter obj1 obj2 m lock
+  => PortalComplex logic specialization interpreter obj1 obj2 m r lock
        payload
   -> Vect n (Entity logic (obj1 lock payload) m lock)
   -> ( Vect n (specialization -> Entity logic (obj1 lock payload) m lock)
@@ -434,11 +444,11 @@ globalPortalComplexSimple
   (\x _ -> closure x)
 
 portalComplexComplex
-  :: forall n s m logic obj1 obj2 specialization interpreter lock payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
   => MonadST s m
-  => Flatten logic interpreter obj2 m lock payload
-  -> Portal logic specialization interpreter obj1 obj2 m lock payload
+  => Flatten logic interpreter obj2 m r lock payload
+  -> Portal logic specialization interpreter obj1 obj2 m r lock payload
   -> Vect n (Entity logic (obj1 lock payload) m lock)
   -> ( forall lock1
         . Vect n (specialization -> Entity logic (obj1 lock1 payload) m lock1)
@@ -458,11 +468,11 @@ portalComplexComplex
   closure
 
 portalSimpleComplex
-  :: forall n s m logic obj1 obj2 specialization interpreter lock payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
   => MonadST s m
-  => Flatten logic interpreter obj2 m lock payload
-  -> PortalSimple specialization interpreter obj1 obj2 m lock
+  => Flatten logic interpreter obj2 m r lock payload
+  -> PortalSimple specialization interpreter obj1 obj2 m r lock
        payload
   -> Vect n (obj1 lock payload)
   -> ( forall lock1
@@ -481,10 +491,10 @@ portalSimpleComplex
   closure
 
 portalComplexSimple
-  :: forall n s m logic obj1 obj2 specialization interpreter lock payload
+  :: forall n s m r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
   => MonadST s m
-  => PortalComplex logic specialization interpreter obj1 obj2 m lock
+  => PortalComplex logic specialization interpreter obj1 obj2 m r lock
        payload
   -> Vect n (Entity logic (obj1 lock payload) m lock)
   -> ( forall lock1
@@ -505,22 +515,22 @@ portalComplexSimple
 
 data Stage = Begin | Middle | End
 
-type Flatten logic interpreter obj m lock payload =
+type Flatten logic interpreter obj m r lock payload =
   { doLogic :: logic -> interpreter -> String -> payload
   , ids :: interpreter -> m String
   , disconnectElement ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope }
       -> payload
-  , toElt :: obj lock payload -> Element interpreter m lock payload
+  , toElt :: obj lock payload -> Element interpreter m r lock payload
   }
 
 flatten
-  :: forall s m obj logic interpreter lock payload
+  :: forall s m r obj logic interpreter lock payload
    . Applicative m
   => MonadST s m
-  => Flatten logic interpreter obj m lock payload
-  -> PSR m
+  => Flatten logic interpreter obj m r lock payload
+  -> PSR m r
   -> interpreter
   -> Entity logic (obj lock payload) m lock
   -> AnEvent m payload
@@ -595,12 +605,18 @@ flatten
                   c1 <- subscribe
                     ( flatten
                         flatArgs
-                        { parent: psr.parent
-                        , scope: myScope
-                        , dyn: Just myDyn
-                        , raiseId: \id -> do
-                            void $ liftST $ Ref.modify (append [ id ]) myIds
-                        }
+                        ( psr
+                            { scope = myScope
+                            , dyn = Just myDyn
+                            , raiseId = \id -> do
+                                void $ liftST $ Ref.modify (append [ id ]) myIds
+                            -- todo: do we also want to call the parent's here?
+                            -- probably not, as for example if it is a few dyns
+                            -- deep, this will be called at each level
+                            -- feels sort of hacky though..
+                            -- psr.raiseId id
+                            }
+                        )
                         interpreter
                         -- hack to make sure that kid only ever raises its
                         -- ID once
@@ -622,17 +638,17 @@ flatten
   where
   element (Element e) = e psr interpreter
 
-type Fix interpreter obj m lock payload =
+type Fix interpreter obj m r lock payload =
   { connectToParent ::
       interpreter -> { id :: String, parent :: String } -> payload
-  , fromElt :: Element interpreter m lock payload -> obj lock payload
+  , fromElt :: Element interpreter m r lock payload -> obj lock payload
   }
 
 fixComplexComplex
-  :: forall s m obj logic interpreter lock payload
+  :: forall s m r obj logic interpreter lock payload
    . MonadST s m
-  => Flatten logic interpreter obj m lock payload
-  -> Fix interpreter obj m lock payload
+  => Flatten logic interpreter obj m r lock payload
+  -> Fix interpreter obj m r lock payload
   -> ( Entity logic (obj lock payload) m lock
        -> Entity logic (obj lock payload) m lock
      )
@@ -658,13 +674,12 @@ fixComplexComplex
     subscribe
       ( flatten
           flatArgs
-          { parent: i.parent
-          , scope: i.scope
-          , dyn: i.dyn
-          , raiseId: \s -> do
-              i.raiseId s
-              void $ liftST $ Ref.write (Just s) av
-          }
+          ( i
+              { raiseId = \s -> do
+                  i.raiseId s
+                  void $ liftST $ Ref.write (Just s) av
+              }
+          )
           interpret
           nn
       )
