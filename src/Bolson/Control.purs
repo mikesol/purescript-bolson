@@ -8,24 +8,32 @@ module Bolson.Control
   , portalComplexSimple
   , fixComplexComplex
   , switcher
+  , envy
+  , fixed
+  , dyn
+  , bussed
+  , vbussed
   ) where
 
 import Prelude
 
-import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), EventfulElement(..), FixedChildren(..), PSR, Scope(..))
+import FRP.Event.Class (bang)
+import FRP.Event.VBus (class VBus, V, vbus)
+import Prim.RowList (class RowToList)
+import Type.Proxy (Proxy)
+import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), PSR, Scope(..))
 import Control.Alt ((<|>))
 import Control.Lazy as Lazy
 import Control.Monad.ST.Class (class MonadST, liftST)
 import Control.Monad.ST.Internal as Ref
 import Data.FastVect.FastVect (toArray, Vect)
 import Data.Filterable (filter)
-import Data.Foldable (foldl, for_, oneOf, oneOfMap, traverse_)
+import Data.Foldable (foldl, for_, oneOf, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
-import FRP.Event (AnEvent, keepLatest, makeEvent, mapAccum, memoize, subscribe)
-import FRP.Event.Class (bang)
+import FRP.Event (AnEvent, keepLatest, makeEvent, mapAccum, bus, memoize, subscribe)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -548,13 +556,6 @@ flatten
     }
   psr
   interpreter = case _ of
-  FixedChildren' (FixedChildren f) -> oneOfMap
-    ( flatten flatArgs psr
-        interpreter
-    )
-    f
-  EventfulElement' (EventfulElement e) -> flatten flatArgs psr interpreter
-    (switcher identity e)
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
     makeEvent \(k :: payload -> m Unit) -> do
@@ -713,3 +714,39 @@ switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
   counter ev = mapAccum fn ev 0
     where
     fn a b = (b + 1) /\ (a /\ b)
+
+fixed
+  :: forall s logic obj m lock
+   . MonadST s m => Array (Entity logic obj m lock)
+  -> Entity logic obj m lock
+fixed a = dyn (oneOf (map (bang <<< bang <<< Insert) a))
+
+dyn
+  :: forall logic obj m lock
+   . AnEvent m (AnEvent m (Child logic obj m lock))
+  -> Entity logic obj m lock
+dyn a = DynamicChildren' (DynamicChildren a)
+
+envy
+  :: forall s logic obj m lock
+   . MonadST s m
+  => AnEvent m (Entity logic obj m lock)
+  -> Entity logic obj m lock
+envy = switcher identity
+
+bussed
+  :: forall s m lock logic obj a
+   . MonadST s m
+  => ((a -> m Unit) -> AnEvent m a -> Entity logic obj m lock)
+  -> Entity logic obj m lock
+bussed f = envy (bus f)
+
+vbussed
+  :: forall s m logic obj lock rbus bus push event u
+   . RowToList bus rbus
+  => MonadST s m
+  => VBus rbus push event u
+  => Proxy (V bus)
+  -> ({ | push } -> { | event } -> Entity logic obj m lock)
+  -> Entity logic obj m lock
+vbussed px f = envy (vbus px f)
