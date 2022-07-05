@@ -518,7 +518,11 @@ data Stage = Begin | Middle | End
 type Flatten logic interpreter obj m lock payload =
   { doLogic :: logic -> interpreter -> String -> payload
   , ids :: interpreter -> m String
-  , disconnectElement ::
+  , dynamicElementInserted ::
+      interpreter
+      -> { id :: String, parent :: String, scope :: Scope }
+      -> payload
+  , dynamicElementRemoved ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope }
       -> payload
@@ -538,7 +542,8 @@ flatten
   flatArgs@
     { doLogic
     , ids
-    , disconnectElement
+    , dynamicElementInserted
+    , dynamicElementRemoved
     , toElt
     }
   psr
@@ -578,7 +583,7 @@ flatten
                     mic =
                       ( (liftST $ Ref.read myId) >>= traverse_ \old ->
                           for_ psr.parent \pnt -> k
-                            ( disconnectElement interpreter
+                            ( dynamicElementRemoved interpreter
                                 { id: old, parent: pnt, scope: myScope }
                             )
                       ) *> join (liftST $ Ref.read myUnsub)
@@ -608,6 +613,12 @@ flatten
                             -- a higher-in-the-tree `dyn`, in which case we
                             -- don't want to raise it out of its context.
                             when (scope == myScope) do
+                              -- todo: is there ever a case where a parent
+                              -- can legitimately not exist here?
+                              for_ psr.parent \parent -> k
+                                ( dynamicElementInserted interpreter
+                                    { id, parent, scope }
+                                )
                               void $ liftST $ Ref.write (Just id) myId
                             psr.raiseId id scope
                         }
