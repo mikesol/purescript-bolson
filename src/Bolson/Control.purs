@@ -524,11 +524,7 @@ flatten
         interpreter
     )
     f
-  EventfulElement' (EventfulElement e) -> keepLatest
-    ( map
-        (flatten flatArgs psr interpreter)
-        e
-    )
+  EventfulElement' (EventfulElement e) -> flatten flatArgs psr interpreter (switcher identity e)
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
     makeEvent \(k :: payload -> m Unit) -> do
@@ -542,20 +538,20 @@ flatten
             myUnsub <- liftST $ Ref.new (pure unit)
             eltsUnsubId <- ids interpreter
             eltsUnsub <- liftST $ Ref.new (pure unit)
-            myIds <- liftST $ Ref.new []
+            myId <- liftST $ Ref.new Nothing
             myImmediateCancellation <- liftST $ Ref.new (pure unit)
             myScope <- Local <$> ids interpreter
             stageRef <- liftST $ Ref.new Begin
             c0 <- subscribe inner \kid' -> do
               stage <- liftST $ Ref.read stageRef
               case kid', stage of
-                Logic logic, Middle -> (liftST $ Ref.read myIds) >>= traverse_
+                Logic logic, Middle -> (liftST $ Ref.read myId) >>= traverse_
                   (k <<< doLogic logic interpreter)
                 Remove, Middle -> do
                   void $ liftST $ Ref.write End stageRef
                   let
                     mic =
-                      ( (liftST $ Ref.read myIds) >>= traverse_ \old ->
+                      ( (liftST $ Ref.read myId) >>= traverse_ \old ->
                           for_ psr.parent \pnt -> k
                             ( disconnectElement interpreter
                                 { id: old, parent: pnt, scope: myScope }
@@ -582,7 +578,7 @@ flatten
                         { parent: psr.parent
                         , scope: myScope
                         , raiseId: \id -> do
-                            void $ liftST $ Ref.modify (append [ id ]) myIds
+                            void $ liftST $ Ref.write (Just id) myId
                         }
                         interpreter
                         -- hack to make sure that kid only ever raises its
