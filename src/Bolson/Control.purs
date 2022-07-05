@@ -71,6 +71,7 @@ type PortalComplex logic specialization interpreter obj1 obj2 m lock payload =
   , toEltO1 :: obj1 lock payload -> Element interpreter m lock payload
   , toEltO2 :: obj2 lock payload -> Element interpreter m lock payload
   }
+
 type PortalSimple specialization interpreter obj1 obj2 m lock payload =
   { giveNewParent ::
       interpreter
@@ -117,7 +118,12 @@ internalPortalSimpleComplex
         ( \ix i -> toElt i # \(Element elt) -> elt
             { parent: Nothing
             , scope: scopeF psr.scope
-            , raiseId: \id -> unsafeUpdateMutAr ix id av
+            -- here, it is safe to override raiseId without calling
+            -- the passed-in raiseId because psr.raiseId
+            -- is actually for the top-most element of the closure,
+            -- _not_ this element
+            -- we use raiseId to harvest the id of the element
+            , raiseId: \id _ -> unsafeUpdateMutAr ix id av
             }
             interpreter
         )
@@ -136,7 +142,7 @@ internalPortalSimpleComplex
         ( \id specialization -> fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
               makeEvent \k2 -> do
-                raiseId id
+                raiseId id scope
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
                 pure (pure unit)
@@ -145,7 +151,10 @@ internalPortalSimpleComplex
       realized = flatten flatArgs psr
         interpreter
         ( -- we will likely need some sort of unsafe coerce here...
-          (unsafeCoerce :: Entity logic (obj2 lock1 payload) m lock1 -> Entity logic (obj2 lock0 payload) m lock0)
+          ( unsafeCoerce
+              :: Entity logic (obj2 lock1 payload) m lock1
+              -> Entity logic (obj2 lock0 payload) m lock0
+          )
             ( closure
                 ( ( unsafeCoerce
                       :: Vect n (specialization -> (obj1 lock0 payload))
@@ -205,7 +214,12 @@ internalPortalComplexComplex
             Element' beamable -> toElt beamable # \(Element elt) -> elt
               { parent: Nothing
               , scope: scopeF psr.scope
-              , raiseId: \id -> unsafeUpdateMutAr ix id av
+              -- here, it is safe to override raiseId without calling
+              -- the passed-in raiseId because psr.raiseId
+              -- is actually for the top-most element of the closure,
+              -- _not_ this element
+              -- we use raiseId to harvest the id of the element
+              , raiseId: \id _ -> unsafeUpdateMutAr ix id av
               }
               interpreter
             _ -> f (wrapElt i)
@@ -225,7 +239,7 @@ internalPortalComplexComplex
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
               makeEvent \k2 -> do
-                raiseId id
+                raiseId id scope
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
                 pure (pure unit)
@@ -306,7 +320,12 @@ internalPortalComplexSimple
             Element' beamable -> toEltO1 beamable # \(Element elt) -> elt
               { parent: Nothing
               , scope: scopeF psr.scope
-              , raiseId: \id -> unsafeUpdateMutAr ix id av
+              -- here, it is safe to override raiseId without calling
+              -- the passed-in raiseId because psr.raiseId
+              -- is actually for the top-most element of the closure,
+              -- _not_ this element
+              -- we use raiseId to harvest the id of the element
+              , raiseId: \id _ -> unsafeUpdateMutAr ix id av
               }
               interpreter
             _ -> f (wrapElt i)
@@ -326,7 +345,7 @@ internalPortalComplexSimple
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
               makeEvent \k2 -> do
-                raiseId id
+                raiseId id scope
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
                 pure (pure unit)
@@ -335,20 +354,24 @@ internalPortalComplexSimple
       Element realized = toEltO2
         ( -- we will likely need some sort of unsafe coerce here...
           (unsafeCoerce :: obj2 lock1 payload -> obj2 lock0 payload)
-            ( ( closure (( unsafeCoerce
-                      :: Vect n
-                           ( specialization
-                             -> Entity logic (obj1 lock0 payload) m lock0
-                           )
-                      -> Vect n
-                           ( specialization
-                             -> Entity logic (obj1 lock1 payload) m lock1
-                           )
-                  ) injectable)
-                ( unsafeCoerce
-                    :: Entity logic (obj1 lock0 payload) m lock0 -> Entity logic (obj1 lock1 payload) m lock1
-                )
-            ))
+            ( ( closure
+                  ( ( unsafeCoerce
+                        :: Vect n
+                             ( specialization
+                               -> Entity logic (obj1 lock0 payload) m lock0
+                             )
+                        -> Vect n
+                             ( specialization
+                               -> Entity logic (obj1 lock1 payload) m lock1
+                             )
+                    ) injectable
+                  )
+                  ( unsafeCoerce
+                      :: Entity logic (obj1 lock0 payload) m lock0
+                      -> Entity logic (obj1 lock1 payload) m lock1
+                  )
+              )
+            )
         )
     u <- subscribe (realized psr interpreter) k
     void $ liftST $ Ref.write u av2
@@ -489,6 +512,7 @@ portalComplexSimple
   portalArgs
   toBeam
   closure
+
 data Stage = Begin | Middle | End
 
 type Flatten logic interpreter obj m lock payload =
@@ -524,7 +548,8 @@ flatten
         interpreter
     )
     f
-  EventfulElement' (EventfulElement e) -> flatten flatArgs psr interpreter (switcher identity e)
+  EventfulElement' (EventfulElement e) -> flatten flatArgs psr interpreter
+    (switcher identity e)
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
     makeEvent \(k :: payload -> m Unit) -> do
@@ -577,9 +602,14 @@ flatten
                         flatArgs
                         { parent: psr.parent
                         , scope: myScope
-                        , raiseId: \id -> do
-                            void $ liftST $ Ref.write (Just id) myId
-                            psr.raiseId id
+                        , raiseId: \id scope -> do
+                            -- we make sure that the scopes are equal
+                            -- otherwise, we are hitting the `raiseId` from
+                            -- a higher-in-the-tree `dyn`, in which case we
+                            -- don't want to raise it out of its context.
+                            when (scope == myScope) do
+                              void $ liftST $ Ref.write (Just id) myId
+                            psr.raiseId id scope
                         }
                         interpreter
                         -- hack to make sure that kid only ever raises its
@@ -613,7 +643,9 @@ fixComplexComplex
    . MonadST s m
   => Flatten logic interpreter obj m lock payload
   -> Fix interpreter obj m lock payload
-  -> (Entity logic (obj lock payload) m lock -> Entity logic (obj lock payload) m lock)
+  -> ( Entity logic (obj lock payload) m lock
+       -> Entity logic (obj lock payload) m lock
+     )
   -> Entity logic (obj lock payload) m lock
 fixComplexComplex
   flatArgs
@@ -629,7 +661,7 @@ fixComplexComplex
           -- only do the connection if not silence
           Just r -> for_ ii.parent \p' ->
             when (r /= p')
-              ( ii.raiseId r *> k0
+              ( ii.raiseId r ii.scope *> k0
                   (connectToParent interpret { id: r, parent: p' })
               )
         pure (pure unit)
@@ -638,8 +670,14 @@ fixComplexComplex
           flatArgs
           { parent: i.parent
           , scope: i.scope
-          , raiseId: \s -> do
-              i.raiseId s
+          , raiseId: \s scope -> do
+              -- theoretically, the scopes could be different
+              -- for example, if there is a fix around the dyn
+              -- then the outer scope (i.scope) will be different than
+              -- the inner scope passed to this function
+              -- (i'm not totally sure about this, but it sounds sensible!)
+              -- for this reason, we always want to pass the inner scope
+              i.raiseId s scope
               void $ liftST $ Ref.write (Just s) av
           }
           interpret

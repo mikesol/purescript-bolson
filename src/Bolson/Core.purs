@@ -34,7 +34,8 @@ derive instance Ord Scope
 type PSR m =
   { parent :: Maybe String
   , scope :: Scope
-  , raiseId :: String -> m Unit
+  -- we raise both the ID and the scope
+  , raiseId :: String -> Scope -> m Unit
   }
 
 data Entity logic obj m lock
