@@ -579,6 +579,7 @@ flatten
                         , scope: myScope
                         , raiseId: \id -> do
                             void $ liftST $ Ref.write (Just id) myId
+                            psr.raiseId id
                         }
                         interpreter
                         -- hack to make sure that kid only ever raises its
