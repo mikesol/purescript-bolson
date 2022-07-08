@@ -26,6 +26,9 @@ data Scope = Local String | Global
 
 derive instance Eq Scope
 derive instance Ord Scope
+instance Show Scope where
+  show (Local l) = "LocalScope[" <> l <> "]"
+  show Global = "GlobalScope"
 
 type PSR m =
   { parent :: Maybe String
