@@ -14,5 +14,11 @@ instance
   Mapping AlwaysEffect (i -> m Unit) (i -> Effect Unit) where
   mapping AlwaysEffect = map always
 
+instance
+  ( HMap AlwaysEffect (Record i) (Record o)
+  ) =>
+  Mapping AlwaysEffect (Record i) (Record o) where
+  mapping AlwaysEffect = halways
+
 halways :: forall i o. HMap AlwaysEffect i o => i -> o
 halways = hmap AlwaysEffect
