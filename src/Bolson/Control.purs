@@ -8,32 +8,24 @@ module Bolson.Control
   , portalComplexSimple
   , fixComplexComplex
   , switcher
-  , envy
-  , fixed
-  , dyn
-  , bussed
-  , vbussed
   ) where
 
 import Prelude
 
-import FRP.Event.Class (bang)
-import FRP.Event.VBus (class VBus, V, vbus)
-import Prim.RowList (class RowToList)
-import Type.Proxy (Proxy)
-import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), PSR, Scope(..))
+import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), EventfulElement(..), FixedChildren(..), PSR, Scope(..))
 import Control.Alt ((<|>))
 import Control.Lazy as Lazy
 import Control.Monad.ST.Class (class MonadST, liftST)
 import Control.Monad.ST.Internal as Ref
 import Data.FastVect.FastVect (toArray, Vect)
 import Data.Filterable (filter)
-import Data.Foldable (foldl, for_, oneOf, traverse_)
+import Data.Foldable (foldl, for_, oneOf, oneOfMap, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
-import FRP.Event (AnEvent, keepLatest, makeEvent, mapAccum, bus, memoize, subscribe)
+import FRP.Event (AnEvent, keepLatest, makeEvent, mapAccum, memoize, subscribe)
+import FRP.Event.Class (bang)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -79,7 +71,6 @@ type PortalComplex logic specialization interpreter obj1 obj2 m lock payload =
   , toEltO1 :: obj1 lock payload -> Element interpreter m lock payload
   , toEltO2 :: obj2 lock payload -> Element interpreter m lock payload
   }
-
 type PortalSimple specialization interpreter obj1 obj2 m lock payload =
   { giveNewParent ::
       interpreter
@@ -126,12 +117,7 @@ internalPortalSimpleComplex
         ( \ix i -> toElt i # \(Element elt) -> elt
             { parent: Nothing
             , scope: scopeF psr.scope
-            -- here, it is safe to override raiseId without calling
-            -- the passed-in raiseId because psr.raiseId
-            -- is actually for the top-most element of the closure,
-            -- _not_ this element
-            -- we use raiseId to harvest the id of the element
-            , raiseId: \id _ -> unsafeUpdateMutAr ix id av
+            , raiseId: \id -> unsafeUpdateMutAr ix id av
             }
             interpreter
         )
@@ -150,7 +136,7 @@ internalPortalSimpleComplex
         ( \id specialization -> fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
               makeEvent \k2 -> do
-                raiseId id scope
+                raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
                 pure (pure unit)
@@ -159,10 +145,7 @@ internalPortalSimpleComplex
       realized = flatten flatArgs psr
         interpreter
         ( -- we will likely need some sort of unsafe coerce here...
-          ( unsafeCoerce
-              :: Entity logic (obj2 lock1 payload) m lock1
-              -> Entity logic (obj2 lock0 payload) m lock0
-          )
+          (unsafeCoerce :: Entity logic (obj2 lock1 payload) m lock1 -> Entity logic (obj2 lock0 payload) m lock0)
             ( closure
                 ( ( unsafeCoerce
                       :: Vect n (specialization -> (obj1 lock0 payload))
@@ -222,12 +205,7 @@ internalPortalComplexComplex
             Element' beamable -> toElt beamable # \(Element elt) -> elt
               { parent: Nothing
               , scope: scopeF psr.scope
-              -- here, it is safe to override raiseId without calling
-              -- the passed-in raiseId because psr.raiseId
-              -- is actually for the top-most element of the closure,
-              -- _not_ this element
-              -- we use raiseId to harvest the id of the element
-              , raiseId: \id _ -> unsafeUpdateMutAr ix id av
+              , raiseId: \id -> unsafeUpdateMutAr ix id av
               }
               interpreter
             _ -> f (wrapElt i)
@@ -247,7 +225,7 @@ internalPortalComplexComplex
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
               makeEvent \k2 -> do
-                raiseId id scope
+                raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
                 pure (pure unit)
@@ -328,12 +306,7 @@ internalPortalComplexSimple
             Element' beamable -> toEltO1 beamable # \(Element elt) -> elt
               { parent: Nothing
               , scope: scopeF psr.scope
-              -- here, it is safe to override raiseId without calling
-              -- the passed-in raiseId because psr.raiseId
-              -- is actually for the top-most element of the closure,
-              -- _not_ this element
-              -- we use raiseId to harvest the id of the element
-              , raiseId: \id _ -> unsafeUpdateMutAr ix id av
+              , raiseId: \id -> unsafeUpdateMutAr ix id av
               }
               interpreter
             _ -> f (wrapElt i)
@@ -353,7 +326,7 @@ internalPortalComplexSimple
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
               makeEvent \k2 -> do
-                raiseId id scope
+                raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
                 pure (pure unit)
@@ -362,24 +335,20 @@ internalPortalComplexSimple
       Element realized = toEltO2
         ( -- we will likely need some sort of unsafe coerce here...
           (unsafeCoerce :: obj2 lock1 payload -> obj2 lock0 payload)
-            ( ( closure
-                  ( ( unsafeCoerce
-                        :: Vect n
-                             ( specialization
-                               -> Entity logic (obj1 lock0 payload) m lock0
-                             )
-                        -> Vect n
-                             ( specialization
-                               -> Entity logic (obj1 lock1 payload) m lock1
-                             )
-                    ) injectable
-                  )
-                  ( unsafeCoerce
-                      :: Entity logic (obj1 lock0 payload) m lock0
-                      -> Entity logic (obj1 lock1 payload) m lock1
-                  )
-              )
-            )
+            ( ( closure (( unsafeCoerce
+                      :: Vect n
+                           ( specialization
+                             -> Entity logic (obj1 lock0 payload) m lock0
+                           )
+                      -> Vect n
+                           ( specialization
+                             -> Entity logic (obj1 lock1 payload) m lock1
+                           )
+                  ) injectable)
+                ( unsafeCoerce
+                    :: Entity logic (obj1 lock0 payload) m lock0 -> Entity logic (obj1 lock1 payload) m lock1
+                )
+            ))
         )
     u <- subscribe (realized psr interpreter) k
     void $ liftST $ Ref.write u av2
@@ -520,17 +489,12 @@ portalComplexSimple
   portalArgs
   toBeam
   closure
-
 data Stage = Begin | Middle | End
 
 type Flatten logic interpreter obj m lock payload =
   { doLogic :: logic -> interpreter -> String -> payload
   , ids :: interpreter -> m String
-  , dynamicElementInserted ::
-      interpreter
-      -> { id :: String, parent :: String, scope :: Scope }
-      -> payload
-  , dynamicElementRemoved ::
+  , disconnectElement ::
       interpreter
       -> { id :: String, parent :: String, scope :: Scope }
       -> payload
@@ -550,12 +514,21 @@ flatten
   flatArgs@
     { doLogic
     , ids
-    , dynamicElementInserted
-    , dynamicElementRemoved
+    , disconnectElement
     , toElt
     }
   psr
   interpreter = case _ of
+  FixedChildren' (FixedChildren f) -> oneOfMap
+    ( flatten flatArgs psr
+        interpreter
+    )
+    f
+  EventfulElement' (EventfulElement e) -> keepLatest
+    ( map
+        (flatten flatArgs psr interpreter)
+        e
+    )
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
     makeEvent \(k :: payload -> m Unit) -> do
@@ -569,22 +542,22 @@ flatten
             myUnsub <- liftST $ Ref.new (pure unit)
             eltsUnsubId <- ids interpreter
             eltsUnsub <- liftST $ Ref.new (pure unit)
-            myId <- liftST $ Ref.new Nothing
+            myIds <- liftST $ Ref.new []
             myImmediateCancellation <- liftST $ Ref.new (pure unit)
             myScope <- Local <$> ids interpreter
             stageRef <- liftST $ Ref.new Begin
             c0 <- subscribe inner \kid' -> do
               stage <- liftST $ Ref.read stageRef
               case kid', stage of
-                Logic logic, Middle -> (liftST $ Ref.read myId) >>= traverse_
+                Logic logic, Middle -> (liftST $ Ref.read myIds) >>= traverse_
                   (k <<< doLogic logic interpreter)
                 Remove, Middle -> do
                   void $ liftST $ Ref.write End stageRef
                   let
                     mic =
-                      ( (liftST $ Ref.read myId) >>= traverse_ \old ->
+                      ( (liftST $ Ref.read myIds) >>= traverse_ \old ->
                           for_ psr.parent \pnt -> k
-                            ( dynamicElementRemoved interpreter
+                            ( disconnectElement interpreter
                                 { id: old, parent: pnt, scope: myScope }
                             )
                       ) *> join (liftST $ Ref.read myUnsub)
@@ -608,20 +581,8 @@ flatten
                         flatArgs
                         { parent: psr.parent
                         , scope: myScope
-                        , raiseId: \id scope -> do
-                            -- we make sure that the scopes are equal
-                            -- otherwise, we are hitting the `raiseId` from
-                            -- a higher-in-the-tree `dyn`, in which case we
-                            -- don't want to raise it out of its context.
-                            when (scope == myScope) do
-                              -- todo: is there ever a case where a parent
-                              -- can legitimately not exist here?
-                              for_ psr.parent \parent -> k
-                                ( dynamicElementInserted interpreter
-                                    { id, parent, scope }
-                                )
-                              void $ liftST $ Ref.write (Just id) myId
-                            psr.raiseId id scope
+                        , raiseId: \id -> do
+                            void $ liftST $ Ref.modify (append [ id ]) myIds
                         }
                         interpreter
                         -- hack to make sure that kid only ever raises its
@@ -655,9 +616,7 @@ fixComplexComplex
    . MonadST s m
   => Flatten logic interpreter obj m lock payload
   -> Fix interpreter obj m lock payload
-  -> ( Entity logic (obj lock payload) m lock
-       -> Entity logic (obj lock payload) m lock
-     )
+  -> (Entity logic (obj lock payload) m lock -> Entity logic (obj lock payload) m lock)
   -> Entity logic (obj lock payload) m lock
 fixComplexComplex
   flatArgs
@@ -673,7 +632,7 @@ fixComplexComplex
           -- only do the connection if not silence
           Just r -> for_ ii.parent \p' ->
             when (r /= p')
-              ( ii.raiseId r ii.scope *> k0
+              ( ii.raiseId r *> k0
                   (connectToParent interpret { id: r, parent: p' })
               )
         pure (pure unit)
@@ -682,14 +641,8 @@ fixComplexComplex
           flatArgs
           { parent: i.parent
           , scope: i.scope
-          , raiseId: \s scope -> do
-              -- theoretically, the scopes could be different
-              -- for example, if there is a fix around the dyn
-              -- then the outer scope (i.scope) will be different than
-              -- the inner scope passed to this function
-              -- (i'm not totally sure about this, but it sounds sensible!)
-              -- for this reason, we always want to pass the inner scope
-              i.raiseId s scope
+          , raiseId: \s -> do
+              i.raiseId s
               void $ liftST $ Ref.write (Just s) av
           }
           interpret
@@ -714,39 +667,3 @@ switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
   counter ev = mapAccum fn ev 0
     where
     fn a b = (b + 1) /\ (a /\ b)
-
-fixed
-  :: forall s logic obj m lock
-   . MonadST s m => Array (Entity logic obj m lock)
-  -> Entity logic obj m lock
-fixed a = dyn (oneOf (map (bang <<< bang <<< Insert) a))
-
-dyn
-  :: forall logic obj m lock
-   . AnEvent m (AnEvent m (Child logic obj m lock))
-  -> Entity logic obj m lock
-dyn a = DynamicChildren' (DynamicChildren a)
-
-envy
-  :: forall s logic obj m lock
-   . MonadST s m
-  => AnEvent m (Entity logic obj m lock)
-  -> Entity logic obj m lock
-envy = switcher identity
-
-bussed
-  :: forall s m lock logic obj a
-   . MonadST s m
-  => ((a -> m Unit) -> AnEvent m a -> Entity logic obj m lock)
-  -> Entity logic obj m lock
-bussed f = envy (bus f)
-
-vbussed
-  :: forall s m logic obj lock rbus bus push event u
-   . RowToList bus rbus
-  => MonadST s m
-  => VBus rbus push event u
-  => Proxy (V bus)
-  -> ({ | push } -> { | event } -> Entity logic obj m lock)
-  -> Entity logic obj m lock
-vbussed px f = envy (vbus px f)

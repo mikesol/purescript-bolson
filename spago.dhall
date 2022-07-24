@@ -13,7 +13,6 @@
   , "prelude"
   , "st"
   , "tuples"
-  , "type-equality"
   , "unsafe-coerce"
   ]
 , packages = ./packages.dhall
