@@ -9,8 +9,8 @@ import FRP.Event.VBus (class VBus, V, vbus)
 import Prim.RowList (class RowToList)
 import Type.Proxy (Proxy)
 
-newtype Element interpreter m (lock :: Type) payload = Element
-  (PSR m -> interpreter -> AnEvent m payload)
+newtype Element interpreter m r (lock :: Type) payload = Element
+  (PSR m r -> interpreter -> AnEvent m payload)
 
 data Child (logic :: Type) (obj :: Type) m (lock :: Type)
   = Insert (Entity logic obj m lock)
@@ -31,10 +31,11 @@ data Scope = Local String | Global
 derive instance Eq Scope
 derive instance Ord Scope
 
-type PSR m =
+type PSR m r =
   { parent :: Maybe String
   , scope :: Scope
   , raiseId :: String -> m Unit
+  | r
   }
 
 data Entity logic obj m lock
