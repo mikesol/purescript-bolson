@@ -2,7 +2,7 @@
 , dependencies =
   [ "control"
   , "effect"
-  , "event"
+  , "hyrule"
   , "fast-vect"
   , "filterable"
   , "foldable-traversable"

@@ -25,7 +25,6 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
 import FRP.Event (AnEvent, keepLatest, makeEvent, mapAccum, memoize, subscribe)
-import FRP.Event.Class (bang)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -671,7 +670,7 @@ switcher
   -> Entity logic obj m lock
 switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
   $ memoize (counter event) \cenv -> map
-      ( \(p /\ n) -> bang (Insert $ f p) <|>
+      ( \(p /\ n) -> pure (Insert $ f p) <|>
           ((const Remove) <$> filter (eq (n + 1) <<< snd) cenv)
       )
       cenv
