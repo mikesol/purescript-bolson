@@ -70,10 +70,10 @@ bussed
 bussed f = EventfulElement' (EventfulElement (bus f))
 
 vbussed
-  :: forall s m logic obj lock rbus bus push event u
+  :: forall s m logic obj lock rbus bus push event
    . RowToList bus rbus
   => MonadST s m
-  => VBus rbus push event u
+  => VBus rbus push event m
   => Proxy (V bus)
   -> ({ | push } -> { | event } -> Entity logic obj m lock)
   -> Entity logic obj m lock
