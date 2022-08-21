@@ -111,8 +111,8 @@ let upstream =
 let overrides =
       { hyrule =
         { dependencies = [ "web-uievents", "js-timers", "unsafe-reference" ]
-        , repo = "https://github.com/purefunctor/purescript-hyrule.git"
-        , version = "pure/zora"
+        , repo = "https://github.com/mikesol/purescript-hyrule.git"
+        , version = "v2.1.0"
         }
       }
 
