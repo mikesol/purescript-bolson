@@ -16,6 +16,7 @@ import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), Eve
 import Control.Alt ((<|>))
 import Control.Lazy as Lazy
 import Control.Monad.ST.Class (class MonadST, liftST)
+import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
 import Data.FastVect.FastVect (toArray, Vect)
 import Data.Filterable (filter)
@@ -36,9 +37,9 @@ type Neg1 = -1
 
 newtype MutAr a = MutAr (Array a)
 
-foreign import mutAr :: forall m a. Array a -> m (MutAr a)
-foreign import unsafeUpdateMutAr :: forall m a. Int -> a -> MutAr a -> m Unit
-foreign import readAr :: forall m a. MutAr a -> m (Array a)
+foreign import mutAr :: forall s a. Array a -> ST s (MutAr a)
+foreign import unsafeUpdateMutAr :: forall s a. Int -> a -> MutAr a -> ST s Unit
+foreign import readAr :: forall s a. MutAr a -> ST s (Array a)
 
 type Portal logic specialization interpreter obj1 obj2 m r lock payload =
   { giveNewParent ::
@@ -111,14 +112,14 @@ internalPortalSimpleComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = makeEvent \k -> do
-    av <- mutAr (map (const "") $ toArray toBeam)
+    av <- liftST $ mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
         ( \ix i -> toElt i # \(Element elt) -> elt
             ( psr
                 { parent = Nothing
                 , scope = scopeF psr.scope
-                , raiseId = \id -> unsafeUpdateMutAr ix id av
+                , raiseId = \id -> liftST $ unsafeUpdateMutAr ix id av
                 }
             )
             interpreter
@@ -129,7 +130,7 @@ internalPortalSimpleComplex
     let
       asIds :: Array String -> Vect n String
       asIds = unsafeCoerce
-    idz <- asIds <$> readAr av
+    idz <- asIds <$> (liftST $ readAr av)
     let
       -- we never connect or disconnect the referentially opaque node
       -- instead, it is always managed inside a referentially transparent node
@@ -200,7 +201,7 @@ internalPortalComplexComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = makeEvent \k -> do
-    av <- mutAr (map (const "") $ toArray toBeam)
+    av <- liftST $ mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
         ( \ix -> Lazy.fix \f i -> case i of
@@ -208,7 +209,7 @@ internalPortalComplexComplex
               ( psr
                   { parent = Nothing
                   , scope = scopeF psr.scope
-                  , raiseId = \id -> unsafeUpdateMutAr ix id av
+                  , raiseId = \id -> liftST $ unsafeUpdateMutAr ix id av
                   }
               )
               interpreter
@@ -220,7 +221,7 @@ internalPortalComplexComplex
     let
       asIds :: Array String -> Vect n String
       asIds = unsafeCoerce
-    idz <- asIds <$> readAr av
+    idz <- asIds <$> (liftST $ readAr av)
     let
       -- we never connect or disconnect the referentially opaque node
       -- instead, it is always managed inside a referentially transparent node
@@ -303,7 +304,7 @@ internalPortalComplexSimple
   closure = fromEltO2 $ Element go
   where
   go psr interpreter = makeEvent \k -> do
-    av <- mutAr (map (const "") $ toArray toBeam)
+    av <- liftST $ mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
         ( \ix -> Lazy.fix \f i -> case i of
@@ -311,7 +312,7 @@ internalPortalComplexSimple
               ( psr
                   { parent = Nothing
                   , scope = scopeF psr.scope
-                  , raiseId = \id -> unsafeUpdateMutAr ix id av
+                  , raiseId = \id -> liftST $ unsafeUpdateMutAr ix id av
                   }
               )
               interpreter
@@ -323,7 +324,7 @@ internalPortalComplexSimple
     let
       asIds :: Array String -> Vect n String
       asIds = unsafeCoerce
-    idz <- asIds <$> readAr av
+    idz <- asIds <$> (liftST $ readAr av)
     let
       -- we never connect or disconnect the referentially opaque node
       -- instead, it is always managed inside a referentially transparent node
