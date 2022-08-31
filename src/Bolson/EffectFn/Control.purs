@@ -563,25 +563,23 @@ flatten
                 Remove, Middle -> do
                   void $ liftST $ Ref.write End stageRef
                   let
-                    mic =
-                      ( (liftST $ Ref.read myIds) >>= traverse_ \old ->
+                    mic = do
+                      idRef <- liftST $ Ref.read myIds
+                      for_ idRef \old ->
                           for_ psr.parent \pnt -> k
                             ( disconnectElement interpreter
                                 { id: old, parent: pnt, scope: myScope }
                             )
-                      ) *> join (liftST $ Ref.read myUnsub)
-                        *> join (liftST $ Ref.read eltsUnsub)
-                        *>
-                          ( void $ liftST $ Ref.modify
+                      join (liftST $ Ref.read myUnsub)
+                      join (liftST $ Ref.read eltsUnsub)
+                      void $ liftST $ Ref.modify
                               (Object.delete myUnsubId)
                               cancelInner
-                          )
-                        *>
-                          ( void $ liftST $ Ref.modify
+                      void $ liftST $ Ref.modify
                               (Object.delete eltsUnsubId)
                               cancelInner
-                          )
-                  (void $ liftST $ Ref.write mic myImmediateCancellation) *> mic
+                  void $ liftST $ Ref.write mic myImmediateCancellation
+                  mic
                 Insert kid, Begin -> do
                   -- holds the current id
                   void $ liftST $ Ref.write Middle stageRef
