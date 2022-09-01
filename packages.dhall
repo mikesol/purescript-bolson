@@ -110,7 +110,31 @@ let upstream =
 
 let overrides =
       { hyrule =
-        { dependencies = [ "web-uievents", "js-timers", "unsafe-reference" ]
+        { dependencies = [  "arrays"
+  , "control"
+  , "datetime"
+  , "effect"
+  , "either"
+  , "filterable"
+  , "foldable-traversable"
+  , "js-timers"
+  , "lists"
+  , "maybe"
+  , "monoid-extras"
+  , "newtype"
+  , "now"
+  , "ordered-collections"
+  , "partial"
+  , "prelude"
+  , "record"
+  , "refs"
+  , "st"
+  , "tuples"
+  , "unsafe-coerce"
+  , "unsafe-reference"
+  , "web-events"
+  , "web-html"
+  , "web-uievents" ]
         , repo = "https://github.com/mikesol/purescript-hyrule.git"
         , version = "effn-event2"
         }

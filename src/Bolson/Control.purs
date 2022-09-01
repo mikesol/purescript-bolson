@@ -25,7 +25,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested ((/\))
-import FRP.Event (Event, keepLatest, makePureEvent, mapAccum, memoize, subscribePure)
+import FRP.Event (Event, keepLatest, makeLemmingEvent, mapAccum, memoize)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -110,7 +110,7 @@ internalPortalSimpleComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = makePureEvent \k -> do
+  go psr interpreter = makeLemmingEvent \mySub k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
@@ -124,7 +124,7 @@ internalPortalSimpleComplex
             interpreter
         )
         (toArray toBeam)
-    u0 <- subscribePure actualized k
+    u0 <- mySub actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
@@ -137,7 +137,7 @@ internalPortalSimpleComplex
       injectable = map
         ( \id specialization -> fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
-              makePureEvent \k2 -> do
+              makeLemmingEvent \mySub k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
@@ -159,7 +159,7 @@ internalPortalSimpleComplex
                 )
             )
         )
-    u <- subscribePure realized k
+    u <- mySub realized k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
@@ -198,7 +198,7 @@ internalPortalComplexComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = makePureEvent \k -> do
+  go psr interpreter = makeLemmingEvent \mySub k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
@@ -214,7 +214,7 @@ internalPortalComplexComplex
             _ -> f (wrapElt i)
         )
         (toArray toBeam)
-    u0 <- subscribePure actualized k
+    u0 <- mySub actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
@@ -227,7 +227,7 @@ internalPortalComplexComplex
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
-              makePureEvent \k2 -> do
+              makeLemmingEvent \mySub k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
@@ -259,7 +259,7 @@ internalPortalComplexComplex
                 )
             )
         )
-    u <- subscribePure realized k
+    u <- mySub realized k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
@@ -300,7 +300,7 @@ internalPortalComplexSimple
   toBeam
   closure = fromEltO2 $ Element go
   where
-  go psr interpreter = makePureEvent \k -> do
+  go psr interpreter = makeLemmingEvent \mySub k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
@@ -316,7 +316,7 @@ internalPortalComplexSimple
             _ -> f (wrapElt i)
         )
         (toArray toBeam)
-    u0 <- subscribePure actualized k
+    u0 <- mySub actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
@@ -329,7 +329,7 @@ internalPortalComplexSimple
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
-              makePureEvent \k2 -> do
+              makeLemmingEvent \mySub k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
@@ -357,7 +357,7 @@ internalPortalComplexSimple
               )
             )
         )
-    u <- subscribePure (realized psr interpreter) k
+    u <- mySub (realized psr interpreter) k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
@@ -530,11 +530,11 @@ flatten
     )
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
-    makePureEvent \(k :: payload -> ST Region.Global Unit) -> do
+    makeLemmingEvent \mySub (k :: payload -> ST Region.Global Unit) -> do
       cancelInner <- Ref.new Object.empty
       cancelOuter <-
         -- each child gets its own scope
-        subscribePure children \inner ->
+        mySub children \inner ->
           do
             -- holds the previous id
             myUnsubId <- ids interpreter
@@ -545,7 +545,7 @@ flatten
             myImmediateCancellation <- Ref.new (pure unit)
             myScope <- Local <$> ids interpreter
             stageRef <- Ref.new Begin
-            c0 <- subscribePure inner \kid' -> do
+            c0 <- mySub inner \kid' -> do
               stage <- Ref.read stageRef
               case kid', stage of
                 Logic logic, Middle -> (Ref.read myIds) >>= traverse_
@@ -573,7 +573,7 @@ flatten
                 Insert kid, Begin -> do
                   -- holds the current id
                   void $ Ref.write Middle stageRef
-                  c1 <- subscribePure
+                  c1 <- mySub
                     ( flatten
                         flatArgs
                         ( psr
@@ -620,10 +620,10 @@ fixComplexComplex
   { connectToParent, fromElt }
   f = Element' $ fromElt $ Element go
   where
-  go i interpret = makePureEvent \k -> do
+  go i interpret = makeLemmingEvent \mySub k -> do
     av <- Ref.new Nothing
     let
-      nn = f $ Element' $ fromElt $ Element \ii _ -> makePureEvent \k0 -> do
+      nn = f $ Element' $ fromElt $ Element \ii _ -> makeLemmingEvent \mySub k0 -> do
         (Ref.read av) >>= case _ of
           Nothing -> pure unit
           -- only do the connection if not silence
@@ -633,7 +633,7 @@ fixComplexComplex
                   (connectToParent interpret { id: r, parent: p' })
               )
         pure (pure unit)
-    subscribePure
+    mySub
       ( flatten
           flatArgs
           ( i
