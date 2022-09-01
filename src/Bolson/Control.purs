@@ -137,7 +137,7 @@ internalPortalSimpleComplex
       injectable = map
         ( \id specialization -> fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
-              makeLemmingEvent \mySub k2 -> do
+              makeLemmingEvent \_ k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
@@ -167,7 +167,8 @@ internalPortalSimpleComplex
       u0
       when (not isGlobal) $ for_ (toArray idz) \id -> k
         (deleteFromCache interpreter { id })
-      join (Ref.read av2)
+      av2c <- Ref.read av2
+      av2c
 
 internalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock0 lock1 payload
@@ -227,7 +228,7 @@ internalPortalComplexComplex
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
-              makeLemmingEvent \mySub k2 -> do
+              makeLemmingEvent \_ k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
@@ -267,7 +268,8 @@ internalPortalComplexComplex
       u0
       when (not isGlobal) $ for_ (toArray idz) \id -> k
         (deleteFromCache interpreter { id })
-      join (Ref.read av2)
+      av2c <- Ref.read av2
+      av2c
 
 internalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter lock0 lock1 payload
@@ -329,7 +331,7 @@ internalPortalComplexSimple
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \{ parent, scope, raiseId } itp ->
-              makeLemmingEvent \mySub k2 -> do
+              makeLemmingEvent \_ k2 -> do
                 raiseId id
                 for_ parent \pt -> k2
                   (giveNewParent itp { id, parent: pt, scope } specialization)
@@ -365,7 +367,8 @@ internalPortalComplexSimple
       u0
       when (not isGlobal) $ for_ (toArray idz) \id -> k
         (deleteFromCache interpreter { id })
-      join (Ref.read av2)
+      av2c <- Ref.read av2
+      av2c
 
 globalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock payload
@@ -560,8 +563,10 @@ flatten
                           ( disconnectElement interpreter
                               { id: old, parent: pnt, scope: myScope }
                           )
-                      join (Ref.read myUnsub)
-                      join (Ref.read eltsUnsub)
+                      myu <- Ref.read myUnsub
+                      myu
+                      eltu <- Ref.read eltsUnsub
+                      eltu
                       void $ Ref.modify
                         (Object.delete myUnsubId)
                         cancelInner
@@ -596,7 +601,8 @@ flatten
                 _, _ -> pure unit
             void $ Ref.write c0 myUnsub
             void $ Ref.modify (Object.insert myUnsubId c0) cancelInner
-            join (Ref.read myImmediateCancellation)
+            mican <- Ref.read myImmediateCancellation
+            mican
       pure do
         (Ref.read cancelInner) >>= foldl (*>) (pure unit)
         cancelOuter
@@ -623,7 +629,7 @@ fixComplexComplex
   go i interpret = makeLemmingEvent \mySub k -> do
     av <- Ref.new Nothing
     let
-      nn = f $ Element' $ fromElt $ Element \ii _ -> makeLemmingEvent \mySub k0 -> do
+      nn = f $ Element' $ fromElt $ Element \ii _ -> makeLemmingEvent \_ k0 -> do
         (Ref.read av) >>= case _ of
           Nothing -> pure unit
           -- only do the connection if not silence
