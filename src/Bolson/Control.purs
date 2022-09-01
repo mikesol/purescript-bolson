@@ -15,7 +15,6 @@ import Prelude
 import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), EventfulElement(..), FixedChildren(..), PSR, Scope(..))
 import Control.Alt ((<|>))
 import Control.Lazy as Lazy
-import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global as Region
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
@@ -113,25 +112,25 @@ internalPortalSimpleComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = makePureEvent \k -> do
-    av <- liftST $ mutAr (map (const "") $ toArray toBeam)
+    av <-  mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
         ( \ix i -> toElt i # \(Element elt) -> elt
             ( psr
                 { parent = Nothing
                 , scope = scopeF psr.scope
-                , raiseId = \id -> liftST $ unsafeUpdateMutAr ix id av
+                , raiseId = \id ->  unsafeUpdateMutAr ix id av
                 }
             )
             interpreter
         )
         (toArray toBeam)
     u0 <- subscribePure actualized k
-    av2 <- liftST $ Ref.new (pure unit)
+    av2 <-  Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
       asIds = unsafeCoerce
-    idz <- asIds <$> (liftST $ readAr av)
+    idz <- asIds <$> ( readAr av)
     let
       -- we never connect or disconnect the referentially opaque node
       -- instead, it is always managed inside a referentially transparent node
@@ -162,14 +161,14 @@ internalPortalSimpleComplex
             )
         )
     u <- subscribePure realized k
-    void $ liftST $ Ref.write u av2
+    void $  Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
     pure do
       u0
       when (not isGlobal) $ for_ (toArray idz) \id -> k
         (deleteFromCache interpreter { id })
-      join (liftST $ Ref.read av2)
+      join ( Ref.read av2)
 
 internalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock0 lock1 payload
@@ -202,7 +201,7 @@ internalPortalComplexComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = makePureEvent \k -> do
-    av <- liftST $ mutAr (map (const "") $ toArray toBeam)
+    av <-  mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
         ( \ix -> Lazy.fix \f i -> case i of
@@ -210,7 +209,7 @@ internalPortalComplexComplex
               ( psr
                   { parent = Nothing
                   , scope = scopeF psr.scope
-                  , raiseId = \id -> liftST $ unsafeUpdateMutAr ix id av
+                  , raiseId = \id ->  unsafeUpdateMutAr ix id av
                   }
               )
               interpreter
@@ -218,11 +217,11 @@ internalPortalComplexComplex
         )
         (toArray toBeam)
     u0 <- subscribePure actualized k
-    av2 <- liftST $ Ref.new (pure unit)
+    av2 <-  Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
       asIds = unsafeCoerce
-    idz <- asIds <$> (liftST $ readAr av)
+    idz <- asIds <$> ( readAr av)
     let
       -- we never connect or disconnect the referentially opaque node
       -- instead, it is always managed inside a referentially transparent node
@@ -263,14 +262,14 @@ internalPortalComplexComplex
             )
         )
     u <- subscribePure realized k
-    void $ liftST $ Ref.write u av2
+    void $  Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
     pure do
       u0
       when (not isGlobal) $ for_ (toArray idz) \id -> k
         (deleteFromCache interpreter { id })
-      join (liftST $ Ref.read av2)
+      join ( Ref.read av2)
 
 internalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter lock0 lock1 payload
@@ -305,7 +304,7 @@ internalPortalComplexSimple
   closure = fromEltO2 $ Element go
   where
   go psr interpreter = makePureEvent \k -> do
-    av <- liftST $ mutAr (map (const "") $ toArray toBeam)
+    av <-  mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
         ( \ix -> Lazy.fix \f i -> case i of
@@ -313,7 +312,7 @@ internalPortalComplexSimple
               ( psr
                   { parent = Nothing
                   , scope = scopeF psr.scope
-                  , raiseId = \id -> liftST $ unsafeUpdateMutAr ix id av
+                  , raiseId = \id ->  unsafeUpdateMutAr ix id av
                   }
               )
               interpreter
@@ -321,11 +320,11 @@ internalPortalComplexSimple
         )
         (toArray toBeam)
     u0 <- subscribePure actualized k
-    av2 <- liftST $ Ref.new (pure unit)
+    av2 <-  Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
       asIds = unsafeCoerce
-    idz <- asIds <$> (liftST $ readAr av)
+    idz <- asIds <$> ( readAr av)
     let
       -- we never connect or disconnect the referentially opaque node
       -- instead, it is always managed inside a referentially transparent node
@@ -362,14 +361,14 @@ internalPortalComplexSimple
             )
         )
     u <- subscribePure (realized psr interpreter) k
-    void $ liftST $ Ref.write u av2
+    void $  Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
     pure do
       u0
       when (not isGlobal) $ for_ (toArray idz) \id -> k
         (deleteFromCache interpreter { id })
-      join (liftST $ Ref.read av2)
+      join ( Ref.read av2)
 
 globalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock payload
@@ -541,55 +540,55 @@ flatten
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
     makePureEvent \(k :: payload -> ST Region.Global Unit) -> do
-      cancelInner <- liftST $ Ref.new Object.empty
+      cancelInner <-  Ref.new Object.empty
       cancelOuter <-
         -- each child gets its own scope
         subscribePure children \inner ->
           do
             -- holds the previous id
             myUnsubId <- ids interpreter
-            myUnsub <- liftST $ Ref.new (pure unit)
+            myUnsub <-  Ref.new (pure unit)
             eltsUnsubId <- ids interpreter
-            eltsUnsub <- liftST $ Ref.new (pure unit)
-            myIds <- liftST $ Ref.new []
-            myImmediateCancellation <- liftST $ Ref.new (pure unit)
+            eltsUnsub <-  Ref.new (pure unit)
+            myIds <-  Ref.new []
+            myImmediateCancellation <-  Ref.new (pure unit)
             myScope <- Local <$> ids interpreter
-            stageRef <- liftST $ Ref.new Begin
+            stageRef <-  Ref.new Begin
             c0 <- subscribePure inner \kid' -> do
-              stage <- liftST $ Ref.read stageRef
+              stage <-  Ref.read stageRef
               case kid', stage of
-                Logic logic, Middle -> (liftST $ Ref.read myIds) >>= traverse_
+                Logic logic, Middle -> ( Ref.read myIds) >>= traverse_
                   (k <<< doLogic logic interpreter)
                 Remove, Middle -> do
-                  void $ liftST $ Ref.write End stageRef
+                  void $  Ref.write End stageRef
                   let
                     mic = do
-                      idRef <- liftST $ Ref.read myIds
+                      idRef <-  Ref.read myIds
                       for_ idRef \old ->
                           for_ psr.parent \pnt -> k
                             ( disconnectElement interpreter
                                 { id: old, parent: pnt, scope: myScope }
                             )
-                      join (liftST $ Ref.read myUnsub)
-                      join (liftST $ Ref.read eltsUnsub)
-                      void $ liftST $ Ref.modify
+                      join ( Ref.read myUnsub)
+                      join ( Ref.read eltsUnsub)
+                      void $  Ref.modify
                               (Object.delete myUnsubId)
                               cancelInner
-                      void $ liftST $ Ref.modify
+                      void $  Ref.modify
                               (Object.delete eltsUnsubId)
                               cancelInner
-                  void $ liftST $ Ref.write mic myImmediateCancellation
+                  void $  Ref.write mic myImmediateCancellation
                   mic
                 Insert kid, Begin -> do
                   -- holds the current id
-                  void $ liftST $ Ref.write Middle stageRef
+                  void $  Ref.write Middle stageRef
                   c1 <- subscribePure
                     ( flatten
                         flatArgs
                         ( psr
                             { scope = myScope
                             , raiseId = \id -> do
-                                void $ liftST $ Ref.modify (append [ id ]) myIds
+                                void $  Ref.modify (append [ id ]) myIds
                             }
                         )
                         interpreter
@@ -600,15 +599,15 @@ flatten
                         kid
                     )
                     k
-                  void $ liftST $ Ref.modify (Object.insert eltsUnsubId c1)
+                  void $  Ref.modify (Object.insert eltsUnsubId c1)
                     cancelInner
-                  void $ liftST $ Ref.write c1 eltsUnsub
+                  void $  Ref.write c1 eltsUnsub
                 _, _ -> pure unit
-            void $ liftST $ Ref.write c0 myUnsub
-            void $ liftST $ Ref.modify (Object.insert myUnsubId c0) cancelInner
-            join (liftST $ Ref.read myImmediateCancellation)
+            void $  Ref.write c0 myUnsub
+            void $  Ref.modify (Object.insert myUnsubId c0) cancelInner
+            join ( Ref.read myImmediateCancellation)
       pure do
-        (liftST $ Ref.read cancelInner) >>= foldl (*>) (pure unit)
+        ( Ref.read cancelInner) >>= foldl (*>) (pure unit)
         cancelOuter
   where
   element (Element e) = e psr interpreter
@@ -631,10 +630,10 @@ fixComplexComplex
   f = Element' $ fromElt $ Element go
   where
   go i interpret = makePureEvent \k -> do
-    av <- liftST $ Ref.new Nothing
+    av <-  Ref.new Nothing
     let
       nn = f $ Element' $ fromElt $ Element \ii _ -> makePureEvent \k0 -> do
-        (liftST $ Ref.read av) >>= case _ of
+        ( Ref.read av) >>= case _ of
           Nothing -> pure unit
           -- only do the connection if not silence
           Just r -> for_ ii.parent \p' ->
@@ -651,7 +650,7 @@ fixComplexComplex
               , scope = i.scope
               , raiseId = \s -> do
                   i.raiseId s
-                  void $ liftST $ Ref.write (Just s) av
+                  void $  Ref.write (Just s) av
               }
           )
           interpret
