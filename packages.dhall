@@ -112,7 +112,7 @@ let overrides =
       { hyrule =
         { dependencies = [ "web-uievents", "js-timers", "unsafe-reference" ]
         , repo = "https://github.com/mikesol/purescript-hyrule.git"
-        , version = "effn-event"
+        , version = "effn-event2"
         }
       }
 
