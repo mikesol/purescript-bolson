@@ -136,7 +136,7 @@ let overrides =
   , "web-html"
   , "web-uievents" ]
         , repo = "https://github.com/mikesol/purescript-hyrule.git"
-        , version = "effn-event2"
+        , version = "main"
         }
       }
 
