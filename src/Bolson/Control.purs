@@ -13,7 +13,6 @@ module Bolson.Control
 import Prelude
 
 import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), EventfulElement(..), FixedChildren(..), PSR, Scope(..))
-import Control.Alt ((<|>))
 import Control.Lazy as Lazy
 import Control.Monad.ST.Global as Region
 import Control.Monad.ST.Internal (ST)
@@ -662,8 +661,10 @@ switcher
   -> Entity logic obj lock
 switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
   $ memoize (counter event) \cenv -> map
-      ( \(p /\ n) -> pure (Insert $ f p) <|>
-          ((const Remove) <$> filter (eq (n + 1) <<< snd) cenv)
+      ( \(p /\ n) -> oneOf
+          [ ((const Remove) <$> filter (eq (n + 1) <<< snd) cenv)
+          , pure (Insert $ f p)
+          ]
       )
       cenv
   where
