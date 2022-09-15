@@ -28,6 +28,9 @@ import FRP.Event (Event, keepLatest, makeLemmingEvent, mapAccum, memoize)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
+import Prim.Row (class Lacks)
+import Record.Builder as RB
+import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 ----
@@ -43,7 +46,7 @@ foreign import readAr :: forall s a. MutAr a -> ST s (Array a)
 type Portal logic specialization interpreter obj1 obj2 r lock payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope }
+      -> { id :: String, parent :: String, scope :: Scope | r }
       -> specialization
       -> payload
   , wrapElt ::
@@ -58,7 +61,7 @@ type Portal logic specialization interpreter obj1 obj2 r lock payload =
 type PortalComplex logic specialization interpreter obj1 obj2 r lock payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope }
+      -> { id :: String, parent :: String, scope :: Scope | r }
       -> specialization
       -> payload
   , wrapElt ::
@@ -74,7 +77,7 @@ type PortalComplex logic specialization interpreter obj1 obj2 r lock payload =
 type PortalSimple specialization interpreter obj1 obj2 r lock payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope }
+      -> { id :: String, parent :: String, scope :: Scope | r }
       -> specialization
       -> payload
   , deleteFromCache :: interpreter -> { id :: String } -> payload
@@ -86,6 +89,8 @@ type PortalSimple specialization interpreter obj1 obj2 r lock payload =
 internalPortalSimpleComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock0 lock1 payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => Boolean
   -> (Scope -> Scope)
   -> Flatten logic interpreter obj2 r lock0 payload
@@ -135,11 +140,11 @@ internalPortalSimpleComplex
       -- that can be properly connected and disconnected
       injectable = map
         ( \id specialization -> fromEltO1 $ Element
-            \{ parent, scope, raiseId } itp ->
+            \psr2 itp ->
               makeLemmingEvent \_ k2 -> do
-                raiseId id
-                for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope } specialization)
+                psr2.raiseId id
+                for_ psr2.parent \pt -> k2
+                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) specialization)
                 pure (pure unit)
         )
         idz
@@ -172,6 +177,8 @@ internalPortalSimpleComplex
 internalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock0 lock1 payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => Boolean
   -> (Scope -> Scope)
   -> Flatten logic interpreter obj2 r lock0 payload
@@ -226,11 +233,11 @@ internalPortalComplexComplex
       -- that can be properly connected and disconnected
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
-            \{ parent, scope, raiseId } itp ->
+            \psr2 itp ->
               makeLemmingEvent \_ k2 -> do
-                raiseId id
-                for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope } specialization)
+                psr2.raiseId id
+                for_ psr2.parent \pt -> k2
+                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) specialization)
                 pure (pure unit)
         )
         idz
@@ -273,6 +280,8 @@ internalPortalComplexComplex
 internalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter lock0 lock1 payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => Boolean
   -> (Scope -> Scope)
   -> PortalComplex logic specialization interpreter obj1 obj2 r lock0 payload
@@ -329,11 +338,11 @@ internalPortalComplexSimple
       -- that can be properly connected and disconnected
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
-            \{ parent, scope, raiseId } itp ->
+            \psr2 itp ->
               makeLemmingEvent \_ k2 -> do
-                raiseId id
-                for_ parent \pt -> k2
-                  (giveNewParent itp { id, parent: pt, scope } specialization)
+                psr2.raiseId id
+                for_ psr2.parent \pt -> k2
+                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) specialization)
                 pure (pure unit)
         )
         idz
@@ -372,6 +381,8 @@ internalPortalComplexSimple
 globalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => Flatten logic interpreter obj2 r lock payload
   -> Portal logic specialization interpreter obj1 obj2 r lock payload
   -> Vect n (Entity logic (obj1 lock payload) lock)
@@ -391,6 +402,8 @@ globalPortalComplexComplex
 globalPortalSimpleComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => Flatten logic interpreter obj2 r lock payload
   -> PortalSimple specialization interpreter obj1 obj2 r lock
        payload
@@ -411,6 +424,8 @@ globalPortalSimpleComplex
 globalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => PortalComplex logic specialization interpreter obj1 obj2 r lock
        payload
   -> Vect n (Entity logic (obj1 lock payload) lock)
@@ -429,6 +444,8 @@ globalPortalComplexSimple
 portalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => Flatten logic interpreter obj2 r lock payload
   -> Portal logic specialization interpreter obj1 obj2 r lock payload
   -> Vect n (Entity logic (obj1 lock payload) lock)
@@ -452,6 +469,8 @@ portalComplexComplex
 portalSimpleComplex
   :: forall n r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => Flatten logic interpreter obj2 r lock payload
   -> PortalSimple specialization interpreter obj1 obj2 r lock payload
   -> Vect n (obj1 lock payload)
@@ -473,6 +492,8 @@ portalSimpleComplex
 portalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter lock payload
    . Compare n Neg1 GT
+  => Lacks "id" r
+  => Lacks "raiseId" r
   => PortalComplex logic specialization interpreter obj1 obj2 r lock
        payload
   -> Vect n (Entity logic (obj1 lock payload) lock)
