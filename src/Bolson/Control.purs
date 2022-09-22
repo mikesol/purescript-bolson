@@ -23,7 +23,7 @@ import Data.Foldable (foldl, for_, oneOf, oneOfMap, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (snd)
-import Data.Tuple.Nested ((/\))
+import Data.Tuple.Nested (type (/\), (/\))
 import FRP.Event (Event, keepLatest, makeLemmingEvent, mapAccum, memoize)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
@@ -689,7 +689,7 @@ switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
       )
       cenv
   where
-  -- counter :: forall a. Event a → Event (a /\ Int)
-  counter ev = mapAccum fn ev 0
+  counter :: forall a. Event a → Event (a /\ Int)
+  counter ev = mapAccum fn 0 ev
     where
-    fn a b = (b + 1) /\ (a /\ b)
+    fn a b = (a + 1) /\ (b /\ a)
