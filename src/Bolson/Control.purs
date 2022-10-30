@@ -17,6 +17,7 @@ import Control.Lazy as Lazy
 import Control.Monad.ST.Global as Region
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
+import Control.Monad.ST.Uncurried (STFn1, mkSTFn1, mkSTFn2, runSTFn1, runSTFn2)
 import Data.FastVect.FastVect (toArray, Vect)
 import Data.Filterable (filter)
 import Data.Foldable (foldl, for_, oneOf, oneOfMap, traverse_)
@@ -24,7 +25,7 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import FRP.Event (Event, keepLatest, makeLemmingEvent, mapAccum, memoize)
+import FRP.Event (Event, Subscriber(..), keepLatest, makeLemmingEventO, mapAccum, memoize)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -114,7 +115,7 @@ internalPortalSimpleComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = makeLemmingEvent \mySub k -> do
+  go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
@@ -128,7 +129,7 @@ internalPortalSimpleComplex
             interpreter
         )
         (toArray toBeam)
-    u0 <- mySub actualized k
+    u0 <- runSTFn2 mySub actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
@@ -141,9 +142,9 @@ internalPortalSimpleComplex
       injectable = map
         ( \id specialization -> fromEltO1 $ Element
             \psr2 itp ->
-              makeLemmingEvent \_ k2 -> do
+              makeLemmingEventO $ mkSTFn2 \_ k2 -> do
                 psr2.raiseId id
-                for_ psr2.parent \pt -> k2
+                for_ psr2.parent \pt -> runSTFn1 k2
                   (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) specialization)
                 pure (pure unit)
         )
@@ -163,13 +164,13 @@ internalPortalSimpleComplex
                 )
             )
         )
-    u <- mySub realized k
+    u <- runSTFn2 mySub realized k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
     pure do
       u0
-      when (not isGlobal) $ for_ (toArray idz) \id -> k
+      when (not isGlobal) $ for_ (toArray idz) \id -> runSTFn1 k
         (deleteFromCache interpreter { id })
       av2c <- Ref.read av2
       av2c
@@ -205,7 +206,7 @@ internalPortalComplexComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = makeLemmingEvent \mySub k -> do
+  go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
@@ -221,7 +222,7 @@ internalPortalComplexComplex
             _ -> f (wrapElt i)
         )
         (toArray toBeam)
-    u0 <- mySub actualized k
+    u0 <- runSTFn2 mySub actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
@@ -234,9 +235,9 @@ internalPortalComplexComplex
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \psr2 itp ->
-              makeLemmingEvent \_ k2 -> do
+              makeLemmingEventO $ mkSTFn2 \_ k2 -> do
                 psr2.raiseId id
-                for_ psr2.parent \pt -> k2
+                for_ psr2.parent \pt -> runSTFn1 k2
                   (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) specialization)
                 pure (pure unit)
         )
@@ -266,13 +267,13 @@ internalPortalComplexComplex
                 )
             )
         )
-    u <- mySub realized k
+    u <- runSTFn2 mySub realized k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
     pure do
       u0
-      when (not isGlobal) $ for_ (toArray idz) \id -> k
+      when (not isGlobal) $ for_ (toArray idz) \id -> runSTFn1 k
         (deleteFromCache interpreter { id })
       av2c <- Ref.read av2
       av2c
@@ -310,7 +311,7 @@ internalPortalComplexSimple
   toBeam
   closure = fromEltO2 $ Element go
   where
-  go psr interpreter = makeLemmingEvent \mySub k -> do
+  go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
       actualized = oneOf $ mapWithIndex
@@ -326,7 +327,7 @@ internalPortalComplexSimple
             _ -> f (wrapElt i)
         )
         (toArray toBeam)
-    u0 <- mySub actualized k
+    u0 <- runSTFn2 mySub actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array String -> Vect n String
@@ -339,9 +340,9 @@ internalPortalComplexSimple
       injectable = map
         ( \id specialization -> Element' $ fromEltO1 $ Element
             \psr2 itp ->
-              makeLemmingEvent \_ k2 -> do
+              makeLemmingEventO $ mkSTFn2 \_ k2 -> do
                 psr2.raiseId id
-                for_ psr2.parent \pt -> k2
+                for_ psr2.parent \pt -> runSTFn1 k2
                   (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) specialization)
                 pure (pure unit)
         )
@@ -367,13 +368,13 @@ internalPortalComplexSimple
               )
             )
         )
-    u <- mySub (realized psr interpreter) k
+    u <- runSTFn2 mySub (realized psr interpreter) k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
     pure do
       u0
-      when (not isGlobal) $ for_ (toArray idz) \id -> k
+      when (not isGlobal) $ for_ (toArray idz) \id ->runSTFn1 k
         (deleteFromCache interpreter { id })
       av2c <- Ref.read av2
       av2c
@@ -553,11 +554,11 @@ flatten
     )
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
-    makeLemmingEvent \mySub (k :: payload -> ST Region.Global Unit) -> do
+    makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) (k :: STFn1 payload Region.Global Unit) -> do
       cancelInner <- Ref.new Object.empty
       cancelOuter <-
         -- each child gets its own scope
-        mySub children \inner ->
+        runSTFn2 mySub children $ mkSTFn1 \inner ->
           do
             -- holds the previous id
             myUnsubId <- ids interpreter
@@ -568,18 +569,19 @@ flatten
             myImmediateCancellation <- Ref.new (pure unit)
             myScope <- Local <$> ids interpreter
             stageRef <- Ref.new Begin
-            c0 <- mySub inner \kid' -> do
+            c0 <- runSTFn2 mySub inner $ mkSTFn1 \kid' -> do
               stage <- Ref.read stageRef
               case kid', stage of
-                Logic logic, Middle -> (Ref.read myIds) >>= traverse_
-                  (k <<< doLogic logic interpreter)
+                Logic logic, Middle -> do
+                    curId <- Ref.read myIds
+                    traverse_ (\i -> runSTFn1 k (doLogic logic interpreter i)) curId
                 Remove, Middle -> do
                   void $ Ref.write End stageRef
                   let
                     mic = do
                       idRef <- Ref.read myIds
                       for_ idRef \old ->
-                        for_ psr.parent \pnt -> k
+                        for_ psr.parent \pnt -> runSTFn1 k
                           ( disconnectElement interpreter
                               { id: old, parent: pnt, scope: myScope }
                           )
@@ -598,7 +600,7 @@ flatten
                 Insert kid, Begin -> do
                   -- holds the current id
                   void $ Ref.write Middle stageRef
-                  c1 <- mySub
+                  c1 <- runSTFn2 mySub
                     ( flatten
                         flatArgs
                         ( psr
@@ -646,20 +648,21 @@ fixComplexComplex
   { connectToParent, fromElt }
   f = Element' $ fromElt $ Element go
   where
-  go i interpret = makeLemmingEvent \mySub k -> do
+  go i interpret = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
     av <- Ref.new Nothing
     let
-      nn = f $ Element' $ fromElt $ Element \ii _ -> makeLemmingEvent \_ k0 -> do
+      nn = f $ Element' $ fromElt $ Element \ii _ -> makeLemmingEventO $ mkSTFn2 \_ k0 -> do
         (Ref.read av) >>= case _ of
           Nothing -> pure unit
           -- only do the connection if not silence
           Just r -> for_ ii.parent \p' ->
             when (r /= p')
-              ( ii.raiseId r *> k0
-                  (connectToParent interpret { id: r, parent: p' })
+              ( do
+                  ii.raiseId r
+                  runSTFn1 k0 (connectToParent interpret { id: r, parent: p' })
               )
         pure (pure unit)
-    mySub
+    runSTFn2 mySub
       ( flatten
           flatArgs
           ( i
