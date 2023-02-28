@@ -20,12 +20,12 @@ import Control.Monad.ST.Internal as Ref
 import Control.Monad.ST.Uncurried (STFn1, mkSTFn1, mkSTFn2, runSTFn1, runSTFn2)
 import Data.FastVect.FastVect (toArray, Vect)
 import Data.Filterable (filter)
-import Data.Foldable (foldl, for_, oneOf, oneOfMap, traverse_)
+import Data.Foldable (foldl, for_, traverse_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import FRP.Event (Event, Subscriber(..), keepLatest, makeLemmingEventO, mapAccum, memoize)
+import FRP.Event (Event, Subscriber(..), merge, keepLatest, makeLemmingEventO, mapAccum, memoize)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -118,7 +118,7 @@ internalPortalSimpleComplex
   go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
-      actualized = oneOf $ mapWithIndex
+      actualized = merge $ mapWithIndex
         ( \ix i -> toElt i # \(Element elt) -> elt
             ( psr
                 { parent = Nothing
@@ -209,7 +209,7 @@ internalPortalComplexComplex
   go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
-      actualized = oneOf $ mapWithIndex
+      actualized = merge $ mapWithIndex
         ( \ix -> Lazy.fix \f i -> case i of
             Element' beamable -> toElt beamable # \(Element elt) -> elt
               ( psr
@@ -314,7 +314,7 @@ internalPortalComplexSimple
   go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
     av <- mutAr (map (const "") $ toArray toBeam)
     let
-      actualized = oneOf $ mapWithIndex
+      actualized = merge $ mapWithIndex
         ( \ix -> Lazy.fix \f i -> case i of
             Element' beamable -> toEltO1 beamable # \(Element elt) -> elt
               ( psr
@@ -542,7 +542,7 @@ flatten
     }
   psr
   interpreter = case _ of
-  FixedChildren' (FixedChildren f) -> oneOfMap
+  FixedChildren' (FixedChildren f) -> merge $ map
     ( flatten flatArgs psr
         interpreter
     )
@@ -685,7 +685,7 @@ switcher
   -> Entity logic obj lock
 switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
   $ memoize (counter event) \cenv -> map
-      ( \(p /\ n) -> oneOf
+      ( \(p /\ n) -> merge
           [ ((const Remove) <$> filter (eq (n + 1) <<< snd) cenv)
           , pure (Insert $ f p)
           ]
