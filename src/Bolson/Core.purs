@@ -11,22 +11,22 @@ import FRP.Event.VBus (class VBus, V, vbus)
 import Prim.RowList (class RowToList)
 import Type.Proxy (Proxy)
 
-newtype Element interpreter r (lock :: Type) payload = Element
+newtype Element interpreter r payload = Element
   (PSR r -> interpreter -> Event payload)
 
-data Child (logic :: Type) (obj :: Type) (lock :: Type)
-  = Insert (Entity logic obj lock)
+data Child (logic :: Type) (obj :: Type)
+  = Insert (Entity logic obj)
   | Remove
   | Logic logic
 
-newtype DynamicChildren logic obj lock = DynamicChildren
-  (Event (Event (Child logic obj lock)))
+newtype DynamicChildren logic obj = DynamicChildren
+  (Event (Event (Child logic obj)))
 
-newtype FixedChildren logic obj lock = FixedChildren
-  (Array (Entity logic obj lock))
+newtype FixedChildren logic obj = FixedChildren
+  (Array (Entity logic obj))
 
-newtype EventfulElement logic obj lock = EventfulElement
-  (Event (Entity logic obj lock))
+newtype EventfulElement logic obj = EventfulElement
+  (Event (Entity logic obj))
 
 data Scope = Local String | Global
 
@@ -40,41 +40,41 @@ type PSR r =
   | r
   }
 
-data Entity logic obj lock
-  = DynamicChildren' (DynamicChildren logic obj lock)
-  | FixedChildren' (FixedChildren logic obj lock)
-  | EventfulElement' (EventfulElement logic obj lock)
+data Entity logic obj
+  = DynamicChildren' (DynamicChildren logic obj)
+  | FixedChildren' (FixedChildren logic obj)
+  | EventfulElement' (EventfulElement logic obj)
   | Element' obj
 
 fixed
-  :: forall logic obj lock
-   . Array (Entity logic obj lock)
-  -> Entity logic obj lock
+  :: forall logic obj
+   . Array (Entity logic obj)
+  -> Entity logic obj
 fixed a = FixedChildren' (FixedChildren a)
 
 dyn
-  :: forall logic obj lock
-   . Event (Event (Child logic obj lock))
-  -> Entity logic obj lock
+  :: forall logic obj
+   . Event (Event (Child logic obj))
+  -> Entity logic obj
 dyn a = DynamicChildren' (DynamicChildren a)
 
 envy
-  :: forall logic obj lock
-   . Event (Entity logic obj lock)
-  -> Entity logic obj lock
+  :: forall logic obj
+   . Event (Entity logic obj)
+  -> Entity logic obj
 envy a = EventfulElement' (EventfulElement a)
 
 bussed
-  :: forall lock logic obj a
-   . ((a -> Effect Unit) -> Event a -> Entity logic obj lock)
-  -> Entity logic obj lock
+  :: forall logic obj a
+   . ((a -> Effect Unit) -> Event a -> Entity logic obj)
+  -> Entity logic obj
 bussed f = EventfulElement' (EventfulElement (bus f))
 
 vbussed
-  :: forall logic obj lock rbus bus push event
+  :: forall logic obj rbus bus push event
    . RowToList bus rbus
   => VBus rbus push event
   => Proxy (V bus)
-  -> ({ | push } -> { | event } -> Entity logic obj lock)
-  -> Entity logic obj lock
+  -> ({ | push } -> { | event } -> Entity logic obj)
+  -> Entity logic obj
 vbussed px f = EventfulElement' (EventfulElement (vbus px f))
