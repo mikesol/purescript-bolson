@@ -102,7 +102,6 @@ internalPortalSimpleComplex
   -> PortalSimple logic specialization interpreter obj1 obj2 r payload
   -> Vect n (obj1 payload)
   -> ( Vect n (specialization -> (obj1 payload))
-       -> (obj1 payload -> obj1 payload)
        -> Entity logic (obj2 payload)
      )
   -> Entity logic (obj2 payload)
@@ -163,9 +162,6 @@ internalPortalSimpleComplex
                       -> Vect n (specialization -> (obj1 payload))
                   ) injectable
                 )
-                ( unsafeCoerce
-                    :: obj1 payload -> obj1 payload
-                )
             )
         )
     u <- runSTFn2 mySub realized k
@@ -189,12 +185,7 @@ internalPortalComplexComplex
   -> Flatten logic interpreter obj2 r payload
   -> Portal logic specialization interpreter obj1 obj2 r payload
   -> Vect n (Entity logic (obj1 payload))
-  -> ( Vect n (specialization -> Entity logic (obj1 payload))
-       -> ( Entity logic (obj1 payload)
-            -> Entity logic (obj1 payload)
-          )
-       -> Entity logic (obj2 payload)
-     )
+  -> ( Vect n (specialization -> Entity logic (obj1 payload))       -> Entity logic (obj2 payload))
   -> Entity logic (obj2 payload)
 internalPortalComplexComplex
   isGlobal
@@ -265,10 +256,6 @@ internalPortalComplexComplex
                            )
                   ) injectable
                 )
-                ( unsafeCoerce
-                    :: Entity logic (obj1 payload)
-                    -> Entity logic (obj1 payload)
-                )
             )
         )
     u <- runSTFn2 mySub realized k
@@ -295,9 +282,6 @@ internalPortalComplexSimple
          ( specialization
            -> Entity logic (obj1 payload)
          )
-       -> ( Entity logic (obj1 payload)
-            -> Entity logic (obj1 payload)
-          )
        -> obj2 payload
      )
   -> obj2 payload
@@ -366,9 +350,6 @@ internalPortalComplexSimple
                              )
                     ) injectable
                   )
-                  ( unsafeCoerce
-                      :: Entity logic (obj1 payload) -> Entity logic (obj1 payload)
-                  )
               )
             )
         )
@@ -402,7 +383,7 @@ globalPortalComplexComplex
   closure = internalPortalComplexComplex true (const Global) flatArgs
   portalArgs
   toBeam
-  (\x _ -> closure x)
+  closure
 
 globalPortalSimpleComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -424,7 +405,7 @@ globalPortalSimpleComplex
   closure = internalPortalSimpleComplex true (const Global) flatArgs
   portalArgs
   toBeam
-  (\x _ -> closure x)
+  closure
 
 globalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -444,7 +425,7 @@ globalPortalComplexSimple
   closure = internalPortalComplexSimple true (const Global)
   portalArgs
   toBeam
-  (\x _ -> closure x)
+  closure
 
 portalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -455,9 +436,6 @@ portalComplexComplex
   -> Portal logic specialization interpreter obj1 obj2 r payload
   -> Vect n (Entity logic (obj1 payload))
   -> ( Vect n (specialization -> Entity logic (obj1 payload))
-       -> ( Entity logic (obj1 payload)
-            -> Entity logic (obj1 payload)
-          )
        -> Entity logic (obj2 payload)
      )
   -> Entity logic (obj2 payload)
@@ -479,7 +457,6 @@ portalSimpleComplex
   -> PortalSimple logic specialization interpreter obj1 obj2 r payload
   -> Vect n (obj1 payload)
   -> ( Vect n (specialization -> obj1 payload)
-       -> (obj1 payload -> obj1 payload)
        -> Entity logic (obj2 payload)
      )
   -> Entity logic (obj2 payload)
@@ -501,9 +478,6 @@ portalComplexSimple
        payload
   -> Vect n (Entity logic (obj1 payload))
   -> ( Vect n (specialization -> Entity logic (obj1 payload))
-       -> ( Entity logic (obj1 payload)
-            -> Entity logic (obj1 payload)
-          )
        -> obj2 payload
      )
   -> obj2 payload
