@@ -186,7 +186,7 @@ internalPortalComplexComplex
   -> Flatten logic interpreter obj2 r payload
   -> Portal logic specialization interpreter obj1 obj2 r payload
   -> Vect n (Entity logic (obj1 payload))
-  -> ( Vect n (specialization -> Entity logic (obj1 payload))       -> Entity logic (obj2 payload))
+  -> (Vect n (specialization -> Entity logic (obj1 payload)) -> Entity logic (obj2 payload))
   -> Entity logic (obj2 payload)
 internalPortalComplexComplex
   isGlobal
@@ -543,7 +543,11 @@ flatten
             eltsUnsub <- Ref.new (pure unit)
             myIds <- Ref.new []
             myImmediateCancellation <- Ref.new (pure unit)
-            myScope <- Local <$> ids interpreter
+            myScope <- Local <$>
+              ( case psr.scope of
+                  Global -> ids interpreter
+                  Local l -> pure l <> pure "!" <> ids interpreter
+              )
             stageRef <- Ref.new Begin
             c0 <- runSTFn2 mySub inner $ mkSTFn1 \kid' -> do
               stage <- Ref.read stageRef
