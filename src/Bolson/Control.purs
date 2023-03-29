@@ -17,6 +17,7 @@ import Control.Lazy as Lazy
 import Control.Monad.ST.Global as Region
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
+import Control.Monad.ST.Internal as ST
 import Control.Monad.ST.Uncurried (STFn1, mkSTFn1, mkSTFn2, runSTFn1, runSTFn2)
 import Control.Plus (empty)
 import Data.FastVect.FastVect (toArray, Vect)
@@ -48,7 +49,7 @@ foreign import readAr :: forall s a. MutAr a -> ST s (Array a)
 type Portal logic specialization interpreter obj1 obj2 r payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope | r }
+      -> { id :: String, parent :: String, scope :: Scope, raiseId :: String -> ST.ST Region.Global Unit | r }
       -> Entity logic (obj1 payload)
       -> specialization
       -> payload
@@ -64,7 +65,7 @@ type Portal logic specialization interpreter obj1 obj2 r payload =
 type PortalComplex logic specialization interpreter obj1 obj2 r payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope | r }
+      -> { id :: String, parent :: String, scope :: Scope, raiseId :: String -> ST.ST Region.Global Unit | r }
       -> Entity logic (obj1 payload)
       -> specialization
       -> payload
@@ -81,7 +82,7 @@ type PortalComplex logic specialization interpreter obj1 obj2 r payload =
 type PortalSimple logic specialization interpreter obj1 obj2 r payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope | r }
+      -> { id :: String, parent :: String, scope :: Scope, raiseId :: String -> ST.ST Region.Global Unit | r }
       -> Entity logic (obj1 payload)
       -> specialization
       -> payload
@@ -148,7 +149,7 @@ internalPortalSimpleComplex
               makeLemmingEventO $ mkSTFn2 \_ k2 -> do
                 psr2.raiseId id
                 for_ psr2.parent \pt -> runSTFn1 k2
-                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) entity specialization)
+                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
                 pure (pure unit)
         )
         idz
@@ -233,7 +234,7 @@ internalPortalComplexComplex
               makeLemmingEventO $ mkSTFn2 \_ k2 -> do
                 psr2.raiseId id
                 for_ psr2.parent \pt -> runSTFn1 k2
-                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) entity specialization)
+                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
                 pure (pure unit)
         )
         idz
@@ -331,7 +332,7 @@ internalPortalComplexSimple
               makeLemmingEventO $ mkSTFn2 \_ k2 -> do
                 psr2.raiseId id
                 for_ psr2.parent \pt -> runSTFn1 k2
-                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt) >>> RB.delete (Proxy :: _ "raiseId")) psr2) entity specialization)
+                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
                 pure (pure unit)
         )
         idz
