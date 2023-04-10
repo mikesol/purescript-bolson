@@ -23,6 +23,8 @@
         "purescript-hyrule": "https://github.com/mikesol/purescript-hyrule.git#v2.3.7",
         "purescript-maybe": "^v6.0.0",
         "purescript-prelude": "^v6.0.1",
+        "purescript-profunctor": "^v6.0.0",
+        "purescript-profunctor-lenses": "^v8.0.0",
         "purescript-record": "^v4.0.0",
         "purescript-st": "^v6.2.0",
         "purescript-tuples": "^v7.0.0",
