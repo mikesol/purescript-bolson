@@ -1,4 +1,4 @@
-{ name = "purescript-bolson"
+{ name = "bolson"
 , dependencies =
   [ "control"
   , "effect"
