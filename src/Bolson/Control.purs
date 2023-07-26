@@ -27,7 +27,8 @@ import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import FRP.Event (Event, Subscriber(..), merge, keepLatest, makeLemmingEventO, mapAccum, memoize)
+import FRP.Event (Event, Subscriber(..), keepLatest, makeEvent, mapAccum, memoize, merge, subscribe)
+import FRP.Event.Class (once_)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -119,7 +120,7 @@ internalPortalSimpleComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
+  go psr interpreter = makeEvent \k -> do
     av <- mutAr (toArray toBeam $> { id: "", entity: EventfulElement' (EventfulElement empty) })
     let
       actualized = merge $ mapWithIndex
@@ -133,7 +134,7 @@ internalPortalSimpleComplex
             interpreter
         )
         (toArray toBeam)
-    u0 <- runSTFn2 mySub actualized k
+    u0 <- subscribe actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
@@ -146,7 +147,7 @@ internalPortalSimpleComplex
       injectable = map
         ( \{ id, entity } specialization -> fromEltO1 $ Element
             \psr2 itp ->
-              makeLemmingEventO $ mkSTFn2 \_ k2 -> do
+              makeEvent $ \k2 -> do
                 psr2.raiseId id
                 for_ psr2.parent \pt -> runSTFn1 k2
                   (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
@@ -165,7 +166,7 @@ internalPortalSimpleComplex
                 )
             )
         )
-    u <- runSTFn2 mySub realized k
+    u <- subscribe realized k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
@@ -202,7 +203,7 @@ internalPortalComplexComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
+  go psr interpreter = makeEvent \k -> do
     av <- mutAr (toArray toBeam $> { id: "", entity: EventfulElement' (EventfulElement empty) })
     let
       actualized = merge $ mapWithIndex
@@ -218,7 +219,7 @@ internalPortalComplexComplex
             _ -> f (wrapElt entity)
         )
         (toArray toBeam)
-    u0 <- runSTFn2 mySub actualized k
+    u0 <- subscribe actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
@@ -231,7 +232,7 @@ internalPortalComplexComplex
       injectable = map
         ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
             \psr2 itp ->
-              makeLemmingEventO $ mkSTFn2 \_ k2 -> do
+              makeEvent \k2 -> do
                 psr2.raiseId id
                 for_ psr2.parent \pt -> runSTFn1 k2
                   (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
@@ -259,7 +260,7 @@ internalPortalComplexComplex
                 )
             )
         )
-    u <- runSTFn2 mySub realized k
+    u <- subscribe realized k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
@@ -300,7 +301,7 @@ internalPortalComplexSimple
   toBeam
   closure = fromEltO2 $ Element go
   where
-  go psr interpreter = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
+  go psr interpreter = makeEvent \k -> do
     av <- mutAr (toArray toBeam $> { id: "", entity: EventfulElement' (EventfulElement empty) })
     let
       actualized = merge $ mapWithIndex
@@ -316,7 +317,7 @@ internalPortalComplexSimple
             _ -> f (wrapElt entity)
         )
         (toArray toBeam)
-    u0 <- runSTFn2 mySub actualized k
+    u0 <- subscribe actualized k
     av2 <- Ref.new (pure unit)
     let
       asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
@@ -329,9 +330,9 @@ internalPortalComplexSimple
       injectable = map
         ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
             \psr2 itp ->
-              makeLemmingEventO $ mkSTFn2 \_ k2 -> do
+              makeEvent \k2 -> do
                 psr2.raiseId id
-                for_ psr2.parent \pt -> runSTFn1 k2
+                for_ psr2.parent \pt ->  k2
                   (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
                 pure (pure unit)
         )
@@ -354,7 +355,7 @@ internalPortalComplexSimple
               )
             )
         )
-    u <- runSTFn2 mySub (realized psr interpreter) k
+    u <- subscribe (realized psr interpreter) k
     void $ Ref.write u av2
     -- cancel immediately, as it should be run synchronously
     -- so if this actually does something then we have a problem
@@ -530,11 +531,11 @@ flatten
     )
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) ->
-    makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) (k :: STFn1 payload Region.Global Unit) -> do
+    makeEvent \(k :: STFn1 payload Region.Global Unit) -> do
       cancelInner <- Ref.new Object.empty
       cancelOuter <-
         -- each child gets its own scope
-        runSTFn2 mySub children $ mkSTFn1 \inner ->
+        subscribe children \inner ->
           do
             -- holds the previous id
             myUnsubId <- ids interpreter
@@ -549,7 +550,7 @@ flatten
                   Local l -> pure l <> pure "!" <> ids interpreter
               )
             stageRef <- Ref.new Begin
-            c0 <- runSTFn2 mySub inner $ mkSTFn1 \kid' -> do
+            c0 <- subscribe inner \kid' -> do
               stage <- Ref.read stageRef
               case kid', stage of
                 Logic logic, Middle -> do
@@ -580,7 +581,7 @@ flatten
                 Insert kid, Begin -> do
                   -- holds the current id
                   void $ Ref.write Middle stageRef
-                  c1 <- runSTFn2 mySub
+                  c1 <- subscribe
                     ( flatten
                         flatArgs
                         ( psr
@@ -628,10 +629,10 @@ fixComplexComplex
   { connectToParent, fromElt }
   f = Element' $ fromElt $ Element go
   where
-  go i interpret = makeLemmingEventO $ mkSTFn2 \(Subscriber mySub) k -> do
+  go i interpret = makeEvent \k -> do
     av <- Ref.new Nothing
     let
-      nn = f $ Element' $ fromElt $ Element \ii _ -> makeLemmingEventO $ mkSTFn2 \_ k0 -> do
+      nn = f $ Element' $ fromElt $ Element \ii _ -> makeEvent \k0 -> do
         (Ref.read av) >>= case _ of
           Nothing -> pure unit
           -- only do the connection if not silence
@@ -642,7 +643,7 @@ fixComplexComplex
                   runSTFn1 k0 (connectToParent interpret { id: r, parent: p' })
               )
         pure (pure unit)
-    runSTFn2 mySub
+    subscribe
       ( flatten
           flatArgs
           ( i
@@ -666,8 +667,8 @@ switcher
 switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
   $ memoize (counter event) \cenv -> map
       ( \(p /\ n) -> merge
-          [ ((const Remove) <$> filter (eq (n + 1) <<< snd) cenv)
-          , pure (Insert $ f p)
+          [ ((const Remove) <$> filter (eq (n + 1) <<< snd) (counter event))
+          , once_ event (Insert $ f p)
           ]
       )
       cenv

@@ -5,11 +5,7 @@ import Prelude
 import Control.Monad.ST as ST
 import Control.Monad.ST.Global as Region
 import Data.Maybe (Maybe)
-import Effect (Effect)
-import FRP.Event (Event, bus)
-import FRP.Event.VBus (class VBus, V, vbus)
-import Prim.RowList (class RowToList)
-import Type.Proxy (Proxy)
+import FRP.Event (Event)
 
 newtype Element interpreter r payload = Element
   (PSR r -> interpreter -> Event payload)
@@ -63,18 +59,3 @@ envy
    . Event (Entity logic obj)
   -> Entity logic obj
 envy a = EventfulElement' (EventfulElement a)
-
-bussed
-  :: forall logic obj a
-   . ((a -> Effect Unit) -> Event a -> Entity logic obj)
-  -> Entity logic obj
-bussed f = EventfulElement' (EventfulElement (bus f))
-
-vbussed
-  :: forall logic obj rbus bus push event
-   . RowToList bus rbus
-  => VBus rbus push event
-  => Proxy (V bus)
-  -> ({ | push } -> { | event } -> Entity logic obj)
-  -> Entity logic obj
-vbussed px f = EventfulElement' (EventfulElement (vbus px f))
