@@ -59,3 +59,18 @@ envy
    . Event (Entity logic obj)
   -> Entity logic obj
 envy a = EventfulElement' (EventfulElement a)
+
+bussed
+  :: forall logic obj a
+   . ((a -> Effect Unit) -> Event a -> Entity logic obj)
+  -> Entity logic obj
+bussed f = EventfulElement' (EventfulElement (bus f))
+
+vbussed
+  :: forall logic obj rbus bus push event
+   . RowToList bus rbus
+  => VBus rbus push event
+  => Proxy (V bus)
+  -> ({ | push } -> { | event } -> Entity logic obj)
+  -> Entity logic obj
+vbussed px f = EventfulElement' (EventfulElement (vbus px f))
