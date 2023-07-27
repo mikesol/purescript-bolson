@@ -11,8 +11,10 @@ import FRP.Event (Event)
 
 data BStage payload = BLoad (List Int) (BStage payload) | BFire (List Int) | BExecute payload
 
-newtype Element interpreter r payload = Element
-  (PSR r -> interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array (BStage payload)) (Event (BStage payload)))))
+type Element' interpreter r payload =
+  PSR r -> interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array (BStage payload)) (Event (BStage payload))))
+
+newtype Element interpreter r payload = Element (Element' interpreter r payload)
 
 data Child (logic :: Type) (obj :: Type)
   = Insert (Entity logic obj)
