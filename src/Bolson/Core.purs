@@ -11,8 +11,11 @@ import FRP.Event (Event)
 
 data BStage payload = BLoad (List Int) (BStage payload) | BFire (List Int) | BExecute payload
 
+type HeadElement' interpreter payload =
+  interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array (BStage payload)) (Event (BStage payload))))
+
 type Element' interpreter r payload =
-  PSR r -> interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array (BStage payload)) (Event (BStage payload))))
+  PSR r -> HeadElement' interpreter payload
 
 newtype Element interpreter r payload = Element (Element' interpreter r payload)
 
