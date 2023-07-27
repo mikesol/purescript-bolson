@@ -9,7 +9,7 @@ import Data.Maybe (Maybe)
 import Data.Tuple (Tuple)
 import FRP.Event (Event)
 
-data BStage payload = BLoad (List Int) payload | BFire Int | BExecute payload
+data BStage payload = BLoad (List Int) (BStage payload) | BFire (List Int) | BExecute payload
 
 newtype Element interpreter r payload = Element
   (PSR r -> interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array (BStage payload)) (Event (BStage payload)))))

@@ -20,20 +20,20 @@ import Control.Monad.ST.Global as Region
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
 import Control.Monad.ST.Internal as ST
-import Control.Monad.ST.Uncurried (STFn1, mkSTFn1, mkSTFn2, runSTFn1, runSTFn2)
 import Control.Plus (empty)
 import Data.Array as Array
 import Data.FastVect.FastVect (toArray, Vect)
 import Data.Filterable (compact, filter)
 import Data.Foldable (foldMap, foldl, for_, traverse_)
-import Data.FunctorWithIndex (mapWithIndex)
+import Data.List ((:))
+import Data.List as List
 import Data.Maybe (Maybe(..))
 import Data.Monoid (guard)
 import Data.Traversable (traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import FRP.Event (Event, Subscriber(..), keepLatest, makeEvent, mapAccum, memoize, merge, subscribe)
+import FRP.Event (Event, keepLatest, makeEvent, mapAccum, memoize, merge, subscribe)
 import FRP.Event.Class (once_)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
@@ -76,7 +76,6 @@ type PortalComplex logic specialization interpreter obj1 obj2 r payload =
       -> Entity logic (obj1 payload)
       -> specialization
       -> payload
-  , freshStage :: ST Global.Global Int
   , wrapElt ::
       Entity logic (obj1 payload)
       -> Entity logic (obj1 payload)
@@ -127,22 +126,20 @@ internalPortalSimpleComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = makeEvent \k -> do
+  go psr interpreter = do
     av <- mutAr (toArray toBeam $> { id: "", entity: EventfulElement' (EventfulElement empty) })
-    let
-      actualized = merge $ mapWithIndex
-        ( \ix entity -> toElt entity # \(Element elt) -> elt
-            ( psr
-                { parent = Nothing
-                , scope = scopeF psr.scope
-                , raiseId = \id -> unsafeUpdateMutAr ix { id, entity: Element' entity } av
-                }
-            )
-            interpreter
-        )
-        (toArray toBeam)
-    u0 <- subscribe actualized k
-    av2 <- Ref.new (pure unit)
+    actualized' <- traverseWithIndex
+      ( \ix entity -> toElt entity # \(Element elt) -> elt
+          ( psr
+              { parent = Nothing
+              , scope = scopeF psr.scope
+              , raiseId = \id -> unsafeUpdateMutAr ix { id, entity: Element' entity } av
+              }
+          )
+          interpreter
+      )
+      (toArray toBeam)
+    let actualized = merge (map (snd <<< snd) actualized')
     let
       asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
       asIds = unsafeCoerce
@@ -153,36 +150,31 @@ internalPortalSimpleComplex
       -- that can be properly connected and disconnected
       injectable = map
         ( \{ id, entity } specialization -> fromEltO1 $ Element
-            \psr2 itp ->
-              makeEvent $ \k2 -> do
-                psr2.raiseId id
-                for_ psr2.parent \pt -> runSTFn1 k2
-                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
-                pure (pure unit)
+            \psr2 itp -> do
+              psr2.raiseId id
+              pure
+                $ Tuple
+                    ( compact
+                        [ psr2.parent <#> \pt ->
+                            (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
+                        ]
+                    )
+                $ Tuple []
+                $ empty
         )
         idz
-      realized = flatten flatArgs psr
-        interpreter
-        ( -- we will likely need some sort of unsafe coerce here...
-          (unsafeCoerce :: Entity logic (obj2 payload) -> Entity logic (obj2 payload))
-            ( closure
-                ( ( unsafeCoerce
-                      :: Vect n (specialization -> (obj1 payload))
-                      -> Vect n (specialization -> (obj1 payload))
-                  ) injectable
-                )
-            )
-        )
-    u <- subscribe realized k
-    void $ Ref.write u av2
-    -- cancel immediately, as it should be run synchronously
-    -- so if this actually does something then we have a problem
-    pure do
-      u0
-      when (not isGlobal) $ for_ (toArray idz) \{ id } -> runSTFn1 k
-        (deleteFromCache interpreter { id })
-      av2c <- Ref.read av2
-      av2c
+    Tuple sub (Tuple unsub elt) <- flatten flatArgs psr interpreter (closure (injectable))
+    let onSubscribe = join $ [ sub ] <> map fst actualized'
+    let
+      onUnsubscribe = append unsub $ guard (not isGlobal) $ map
+        (\{ id } -> BExecute $ deleteFromCache interpreter { id })
+        (toArray idz)
+    pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
+      u0 <- subscribe actualized k
+      u1 <- subscribe elt k
+      pure do
+        u0
+        u1
 
 internalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -210,73 +202,54 @@ internalPortalComplexComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = makeEvent \k -> do
+  go psr interpreter = do
     av <- mutAr (toArray toBeam $> { id: "", entity: EventfulElement' (EventfulElement empty) })
-    let
-      actualized = merge $ mapWithIndex
-        ( \ix -> Lazy.fix \f entity -> case entity of
-            Element' beamable -> toElt beamable # \(Element elt) -> elt
-              ( psr
-                  { parent = Nothing
-                  , scope = scopeF psr.scope
-                  , raiseId = \id -> unsafeUpdateMutAr ix { id, entity } av
-                  }
-              )
-              interpreter
-            _ -> f (wrapElt entity)
-        )
-        (toArray toBeam)
-    u0 <- subscribe actualized k
-    av2 <- Ref.new (pure unit)
+    actualized' <- traverseWithIndex
+      ( \ix -> Lazy.fix \f entity -> case entity of
+          Element' beamable -> toElt beamable # \(Element elt) -> elt
+            ( psr
+                { parent = Nothing
+                , scope = scopeF psr.scope
+                , raiseId = \id -> unsafeUpdateMutAr ix { id, entity } av
+                }
+            )
+            interpreter
+          _ -> f (wrapElt entity)
+      )
+      (toArray toBeam)
+    let actualized = merge (map (snd <<< snd) actualized')
     let
       asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
       asIds = unsafeCoerce
     idz <- asIds <$> (readAr av)
     let
-      -- we never connect or disconnect the referentially opaque node
-      -- instead, it is always managed inside a referentially transparent node
-      -- that can be properly connected and disconnected
       injectable = map
         ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
-            \psr2 itp ->
-              makeEvent \k2 -> do
-                psr2.raiseId id
-                for_ psr2.parent \pt -> runSTFn1 k2
-                  (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
-                pure (pure unit)
+            \psr2 itp -> do
+              psr2.raiseId id
+              pure
+                $ Tuple
+                    ( compact
+                        [ psr2.parent <#> \pt ->
+                            (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
+                        ]
+                    )
+                $ Tuple []
+                $ empty
         )
         idz
-      realized = flatten flatArgs psr
-        interpreter
-        ( -- we will likely need some sort of unsafe coerce here...
-          ( unsafeCoerce
-              :: Entity logic (obj2 payload)
-              -> Entity logic (obj2 payload)
-          )
-            ( closure
-                ( ( unsafeCoerce
-                      :: Vect n
-                           ( specialization
-                             -> Entity logic (obj1 payload)
-                           )
-                      -> Vect n
-                           ( specialization
-                             -> Entity logic (obj1 payload)
-                           )
-                  ) injectable
-                )
-            )
-        )
-    u <- subscribe realized k
-    void $ Ref.write u av2
-    -- cancel immediately, as it should be run synchronously
-    -- so if this actually does something then we have a problem
-    pure do
-      u0
-      when (not isGlobal) $ for_ (toArray idz) \{ id } -> runSTFn1 k
-        (deleteFromCache interpreter { id })
-      av2c <- Ref.read av2
-      av2c
+    Tuple sub (Tuple unsub elt) <- flatten flatArgs psr interpreter (closure (injectable))
+    let onSubscribe = join $ [ sub ] <> map fst actualized'
+    let
+      onUnsubscribe = append unsub $ guard (not isGlobal) $ map
+        (\{ id } -> BExecute $ deleteFromCache interpreter { id })
+        (toArray idz)
+    pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
+      u0 <- subscribe actualized k
+      u1 <- subscribe elt k
+      pure do
+        u0
+        u1
 
 internalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -287,12 +260,7 @@ internalPortalComplexSimple
   -> (Scope -> Scope)
   -> PortalComplex logic specialization interpreter obj1 obj2 r payload
   -> Vect n (Entity logic (obj1 payload))
-  -> ( Vect n
-         ( specialization
-           -> Entity logic (obj1 payload)
-         )
-       -> obj2 payload
-     )
+  -> (Vect n (specialization -> Entity logic (obj1 payload)) -> obj2 payload)
   -> obj2 payload
 internalPortalComplexSimple
   isGlobal
@@ -337,18 +305,26 @@ internalPortalComplexSimple
           _ -> f (wrapElt entity)
       )
       (toArray toBeam)
+    -- these represent the events of every sub-element in the portal's vector
     let actualized = merge (map (snd <<< snd) actualized')
+    -- this is the id we'll use for deferred unloading
     let
       asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
       asIds = unsafeCoerce
+    -- now, when we read the ids, we will have all of the ids of the "beamable" elements in the vector
+    -- this is because the left-bind above that produces actualized' triggers all of the `raiseId` in the elements
     idz <- asIds <$> (readAr av)
+    -- here's the bait and switch: instead of injecting the beamables into the closure,
+    -- we inject completely empty elements
+    -- they have no moving parts, so it's an empty event
+    -- the only thing they do is signal that they're
+    -- in fact from the portal (the raiseId)
+    -- and provide a side-effect to run immediately upon subscription, meaning the give-new-parent
     let
-      -- we never connect or disconnect the referentially opaque node
-      -- instead, it is always managed inside a referentially transparent node
-      -- that can be properly connected and disconnected
       injectable = map
         ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
-            \psr2 itp ->
+            \psr2 itp -> do
+              psr2.raiseId id
               pure
                 $ Tuple
                     ( compact
@@ -357,24 +333,25 @@ internalPortalComplexSimple
                         ]
                     )
                 $ Tuple []
-                $ makeEvent \k2 -> do
-                    psr2.raiseId id
-                    pure (pure unit)
+                $ empty
         )
         idz
-      Element realized = toEltO2
-        ( closure
-            (injectable)
-
-        )
+      -- now, the elements are simply the evaluation of the closure
+      Element realized = toEltO2 (closure (injectable))
+    -- we get the top-level element yielded by the portal
     realized' <- realized psr interpreter
+    -- here's everything we need on subscription, so we can issue it immediately
     let onSubscribe = join $ Array.cons (fst realized') $ map fst actualized'
+    -- When we unsubscribe from the portal, we want to delete everything
+    -- with one of the ids we created.
     let
       onUnsubscribe = guard (not isGlobal) $ map
-        ( \{ id } -> deleteFromCache interpreter { id } )
+        (\{ id } -> BExecute $ deleteFromCache interpreter { id })
         (toArray idz)
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
+      -- Triggers all of the effects in the beamable elements
       u0 <- subscribe actualized k
+      -- Triggers all of the effects in the element yielded by the closure
       u1 <- subscribe (snd $ snd realized') k
       pure do
         u0
@@ -517,6 +494,19 @@ type Flatten logic interpreter obj r payload =
   , toElt :: obj payload -> Element interpreter r payload
   }
 
+-- todo: test this to make sure loading and redecoration is correct in anger!
+load :: forall payload. List.List Int -> BStage payload -> BStage payload
+load l = case _ of
+  BFire i -> BLoad (l <> i) (BFire (l <> i))
+  BExecute i -> BLoad l (BExecute i)
+  BLoad l2 x -> BLoad (l <> l2) x
+
+redecorate :: forall payload. List.List Int -> BStage payload -> BStage payload
+redecorate l = case _ of
+  BLoad l2 x -> BLoad (l <> l2) x
+  BFire l2 -> BFire (l <> l2)
+  x -> x
+
 flatten
   :: forall r obj logic interpreter payload
    . Flatten logic interpreter obj r payload
@@ -538,99 +528,117 @@ flatten
     pure $ (map <<< map) merge
       $ foldMap (\(Tuple a (Tuple b c)) -> Tuple a (Tuple b [ c ])) o
   EventfulElement' (EventfulElement e) -> do
-    usu0 <- Ref.new []
+    usu0 <- Ref.new Nothing
     usu1 <- Ref.new (pure unit)
-    fireId <- ids
-    pure $ Tuple [] $ Tuple [BFire fireId] $ makeEvent \k -> do
+    -- this outer id represents the outer event
+    -- on unsubscribe, we kill everything under it
+    fireId1 <- ids interpreter
+    pure $ Tuple [] $ Tuple [ BFire (pure fireId1) ] $ makeEvent \k -> do
       s <- subscribe (map (flatten flatArgs psr interpreter) e) \i -> do
+        -- we consult the inner id and unsubscribe everything
+        -- associated with it via a fire command
         usus0 <- liftST $ Ref.read usu0
-        for_ usus0 k
+        for_ usus0 $ k <<< BFire
+        -- like keepLater, we run the unsubscription effect
         usus1 <- liftST $ Ref.read usu1
         liftST $ usus1
+        -- we generate a fresh id for the inner event
+        fireId2 <- liftST $ ids interpreter
         Tuple sub (Tuple unsub pld) <- liftST i
-        for_ sub k
-        void $ liftST $ Ref.write unsub usu0
-        u <- liftST $ subscribe pld k
+        -- for everything that should happen upon subscription, we execute immediately
+        for_ sub $ k <<< BExecute
+        let fireList = (fireId1 : fireId2 : List.Nil)
+        -- for unsubscription, we defer it via a load
+        for_ unsub $ k <<< load fireList
+        -- we stash the new fire id in case a new event comes down the pipe for the BFire above
+        void $ liftST $ Ref.write (Just (fireId1 : fireId2 : List.Nil)) usu0
+        -- for every event that is emitted, if anything is staged, we append the current list to that stage via redecoration
+        u <- liftST $ subscribe (map (redecorate fireList) pld) k
+        -- we write the unsubscribe to trigger above
         void $ liftST $ Ref.write u usu1
       pure do
         s
         join (Ref.read usu1)
   Element' e -> element (toElt e)
-  DynamicChildren' (DynamicChildren children) ->
-    makeEvent \(k :: STFn1 payload Region.Global Unit) -> do
-      cancelInner <- Ref.new Object.empty
+  DynamicChildren' (DynamicChildren children) -> do
+    fireId1 <- ids interpreter
+    cancelInner <- Ref.new Object.empty
+    pure $ Tuple [] $ Tuple [ BFire $ pure fireId1 ] $ makeEvent \k -> do
       cancelOuter <-
         -- each child gets its own scope
         subscribe children \inner ->
           do
+            fireId2 <- liftST $ ids interpreter
             -- holds the previous id
-            myUnsubId <- ids interpreter
-            myUnsub <- Ref.new (pure unit)
-            eltsUnsubId <- ids interpreter
-            eltsUnsub <- Ref.new (pure unit)
-            myIds <- Ref.new []
-            myImmediateCancellation <- Ref.new (pure unit)
-            myScope <- Local <$>
+            myUnsubId <- liftST $ ids interpreter
+            myUnsub <- liftST $ Ref.new (pure unit)
+            eltsUnsubId <- liftST $ ids interpreter
+            eltsUnsub <- liftST $ Ref.new (pure unit)
+            myIds <- liftST $ Ref.new []
+            myImmediateCancellation <- liftST $ Ref.new (pure unit)
+            myScope <- liftST $ Local <$>
               ( case psr.scope of
-                  Global -> ids interpreter
-                  Local l -> pure l <> pure "!" <> ids interpreter
+                  Global -> show <$> ids interpreter
+                  Local l -> pure l <> pure "!" <> show <$> ids interpreter
               )
-            stageRef <- Ref.new Begin
-            c0 <- subscribe inner \kid' -> do
-              stage <- Ref.read stageRef
+            stageRef <- liftST $ Ref.new Begin
+            let fireList = (fireId1 : fireId2 : List.Nil)
+            c0 <- liftST $ subscribe inner \kid' -> do
+              stage <- liftST $ Ref.read stageRef
               case kid', stage of
                 Logic logic, Middle -> do
-                  curId <- Ref.read myIds
-                  traverse_ (\i -> runSTFn1 k (doLogic logic interpreter i)) curId
+                  curId <- liftST $ Ref.read myIds
+                  traverse_ (k <<< BExecute <<< doLogic logic interpreter) curId
                 Remove, Middle -> do
-                  void $ Ref.write End stageRef
+                  void $ liftST $ Ref.write End stageRef
+                  k $ BFire (fireId1 : fireId2 : List.Nil)
                   let
                     mic = do
-                      idRef <- Ref.read myIds
+                      idRef <- liftST $ Ref.read myIds
                       for_ idRef \old ->
-                        for_ psr.parent \pnt -> runSTFn1 k
+                        for_ psr.parent \pnt -> k $ BExecute
                           ( disconnectElement interpreter
                               { id: old, parent: pnt, scope: myScope }
                           )
-                      myu <- Ref.read myUnsub
-                      myu
-                      eltu <- Ref.read eltsUnsub
-                      eltu
-                      void $ Ref.modify
-                        (Object.delete myUnsubId)
+                      myu <- liftST $ Ref.read myUnsub
+                      liftST myu
+                      eltu <- liftST $ Ref.read eltsUnsub
+                      liftST eltu
+                      void $ liftST $ Ref.modify
+                        (Object.delete $ show myUnsubId)
                         cancelInner
-                      void $ Ref.modify
-                        (Object.delete eltsUnsubId)
+                      void $ liftST $ Ref.modify
+                        (Object.delete $ show eltsUnsubId)
                         cancelInner
-                  void $ Ref.write mic myImmediateCancellation
+                  void $ liftST $ Ref.write mic myImmediateCancellation
                   mic
                 Insert kid, Begin -> do
                   -- holds the current id
-                  void $ Ref.write Middle stageRef
-                  c1 <- subscribe
-                    ( flatten
-                        flatArgs
-                        ( psr
-                            { scope = myScope
-                            , raiseId = \id -> do
-                                void $ Ref.modify (append [ id ]) myIds
-                            }
-                        )
-                        interpreter
-                        -- hack to make sure that kid only ever raises its
-                        -- ID once
-                        -- if it is anything other than an element we wrap it in one
-                        -- otherwise, we'd risk raising many ids to a parent
-                        kid
+                  void $ liftST $ Ref.write Middle stageRef
+                  Tuple sub (Tuple unsub evt) <- liftST $ flatten
+                    flatArgs
+                    ( psr
+                        { scope = myScope
+                        , raiseId = \id -> do
+                            void $ Ref.modify (append [ id ]) myIds
+                        }
                     )
-                    k
-                  void $ Ref.modify (Object.insert eltsUnsubId c1)
+                    interpreter
+                    -- hack to make sure that kid only ever raises its
+                    -- ID once
+                    -- if it is anything other than an element we wrap it in one
+                    -- otherwise, we'd risk raising many ids to a parent
+                    kid
+                  for_ unsub $ k <<< load fireList
+                  for_ sub $ k <<< BExecute
+                  c1 <- liftST $ subscribe (map (redecorate fireList) evt) k
+                  void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
                     cancelInner
-                  void $ Ref.write c1 eltsUnsub
+                  void $ liftST $ Ref.write c1 eltsUnsub
                 _, _ -> pure unit
-            void $ Ref.write c0 myUnsub
-            void $ Ref.modify (Object.insert myUnsubId c0) cancelInner
-            mican <- Ref.read myImmediateCancellation
+            void $ liftST $ Ref.write c0 myUnsub
+            void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0) cancelInner
+            mican <- liftST $ Ref.read myImmediateCancellation
             mican
       pure do
         (Ref.read cancelInner) >>= foldl (*>) (pure unit)
@@ -655,35 +663,26 @@ fixComplexComplex
   { connectToParent, fromElt }
   f = Element' $ fromElt $ Element go
   where
-  go i interpret = makeEvent \k -> do
+  go i interpret = do
     av <- Ref.new Nothing
     let
-      nn = f $ Element' $ fromElt $ Element \ii _ -> makeEvent \k0 -> do
-        (Ref.read av) >>= case _ of
-          Nothing -> pure unit
-          -- only do the connection if not silence
-          Just r -> for_ ii.parent \p' ->
-            when (r /= p')
-              ( do
-                  ii.raiseId r
-                  runSTFn1 k0 (connectToParent interpret { id: r, parent: p' })
-              )
-        pure (pure unit)
-    subscribe
-      ( flatten
-          flatArgs
-          ( i
-              { parent = i.parent
-              , scope = i.scope
-              , raiseId = \s -> do
-                  i.raiseId s
-                  void $ Ref.write (Just s) av
-              }
-          )
-          interpret
-          nn
+      nn = f $ Element' $ fromElt $ Element \ii _ -> do
+        av' <- Ref.read av
+        case av', ii.parent of
+          Just r, Just p'
+            | r /= p' -> pure $ Tuple [ connectToParent interpret { id: r, parent: p' } ] $ Tuple [] empty
+          _, _ -> pure $ Tuple [] $ Tuple [] empty
+    flatten flatArgs
+      ( i
+          { parent = i.parent
+          , scope = i.scope
+          , raiseId = \s -> do
+              i.raiseId s
+              void $ Ref.write (Just s) av
+          }
       )
-      k
+      interpret
+      nn
 
 switcher
   :: forall i logic obj
