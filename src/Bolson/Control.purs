@@ -8,6 +8,11 @@ module Bolson.Control
   , portalComplexSimple
   , fixComplexComplex
   , switcher
+  , Flatten
+  , Portal
+  , PortalComplex
+  , PortalSimple
+  , Fix
   ) where
 
 import Prelude
