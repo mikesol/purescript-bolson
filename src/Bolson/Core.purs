@@ -4,15 +4,12 @@ import Prelude
 
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Global as ST
-import Data.List (List)
 import Data.Maybe (Maybe)
 import Data.Tuple (Tuple)
 import FRP.Event (Event)
 
-data BStage payload = BLoad (List Int) (BStage payload) | BFire (List Int) | BExecute payload
-
 type HeadElement' interpreter payload =
-  interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array (BStage payload)) (Event (BStage payload))))
+  interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array payload) (Event payload)))
 
 type Element' interpreter r payload =
   PSR r -> HeadElement' interpreter payload
