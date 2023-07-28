@@ -496,9 +496,9 @@ type Flatten logic interpreter obj r payload =
       interpreter
       -> { id :: String, parent :: String, scope :: Scope }
       -> payload
-  , deferPayload :: List.List Int -> payload -> payload
-  , forcePayload :: List.List Int -> payload
-  , redecorateDeferredPayload :: List.List Int -> payload -> payload
+  , deferPayload :: interpreter -> List.List Int -> payload -> payload
+  , forcePayload :: interpreter -> List.List Int -> payload
+  , redecorateDeferredPayload :: interpreter -> List.List Int -> payload -> payload
   , toElt :: obj payload -> Element interpreter r payload
   }
 
@@ -531,12 +531,12 @@ flatten
     -- this outer id represents the outer event
     -- on unsubscribe, we kill everything under it
     fireId1 <- ids interpreter
-    pure $ Tuple [] $ Tuple [ forcePayload (pure fireId1) ] $ makeEvent \k -> do
+    pure $ Tuple [] $ Tuple [ forcePayload interpreter (pure fireId1) ] $ makeEvent \k -> do
       s <- subscribe (map (flatten flatArgs psr interpreter) e) \i -> do
         -- we consult the inner id and unsubscribe everything
         -- associated with it via a fire command
         usus0 <- liftST $ Ref.read usu0
-        for_ usus0 $ k <<< forcePayload
+        for_ usus0 $ k <<< forcePayload interpreter
         -- like keepLater, we run the unsubscription effect
         usus1 <- liftST $ Ref.read usu1
         liftST $ usus1
@@ -547,11 +547,11 @@ flatten
         for_ sub $ k 
         let fireList = (fireId1 : fireId2 : List.Nil)
         -- for unsubscription, we defer it via a load
-        for_ unsub $ k <<< deferPayload fireList
+        for_ unsub $ k <<< deferPayload interpreter fireList
         -- we stash the new fire id in case a new event comes down the pipe for the forcePayload above
         void $ liftST $ Ref.write (Just (fireId1 : fireId2 : List.Nil)) usu0
         -- for every event that is emitted, if anything is staged, we append the current list to that stage via redecoration
-        u <- liftST $ subscribe (map (redecorateDeferredPayload fireList) pld) k
+        u <- liftST $ subscribe (map (redecorateDeferredPayload interpreter fireList) pld) k
         -- we write the unsubscribe to trigger above
         void $ liftST $ Ref.write u usu1
       pure do
@@ -561,7 +561,7 @@ flatten
   DynamicChildren' (DynamicChildren children) -> do
     fireId1 <- ids interpreter
     cancelInner <- Ref.new Object.empty
-    pure $ Tuple [] $ Tuple [ forcePayload $ pure fireId1 ] $ makeEvent \k -> do
+    pure $ Tuple [] $ Tuple [ forcePayload interpreter $ pure fireId1 ] $ makeEvent \k -> do
       cancelOuter <-
         -- each child gets its own scope
         subscribe children \inner ->
@@ -589,7 +589,7 @@ flatten
                   traverse_ (k  <<< doLogic logic interpreter) curId
                 Remove, Middle -> do
                   void $ liftST $ Ref.write End stageRef
-                  k $ forcePayload (fireId1 : fireId2 : List.Nil)
+                  k $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
                   let
                     mic = do
                       idRef <- liftST $ Ref.read myIds
@@ -627,9 +627,9 @@ flatten
                     -- if it is anything other than an element we wrap it in one
                     -- otherwise, we'd risk raising many ids to a parent
                     kid
-                  for_ unsub $ k <<< deferPayload fireList
+                  for_ unsub $ k <<< deferPayload interpreter fireList
                   for_ sub $ k 
-                  c1 <- liftST $ subscribe (map (redecorateDeferredPayload fireList) evt) k
+                  c1 <- liftST $ subscribe (map (redecorateDeferredPayload interpreter fireList) evt) k
                   void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
                     cancelInner
                   void $ liftST $ Ref.write c1 eltsUnsub
