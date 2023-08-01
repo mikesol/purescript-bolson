@@ -26,7 +26,6 @@ import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
 import Control.Monad.ST.Internal as ST
 import Control.Plus (empty)
-import Data.Array as Array
 import Data.FastVect.FastVect (toArray, Vect)
 import Data.Filterable (compact, filter)
 import Data.Foldable (foldMap, foldl, for_, traverse_)
@@ -61,7 +60,12 @@ foreign import readAr :: forall s a. MutAr a -> ST s (Array a)
 type Portal logic specialization interpreter obj1 obj2 r payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope, raiseId :: String -> ST.ST Region.Global Unit | r }
+      -> { id :: String
+         , parent :: String
+         , scope :: Scope
+         , raiseId :: String -> ST.ST Region.Global Unit
+         | r
+         }
       -> Entity logic (obj1 payload)
       -> specialization
       -> payload
@@ -77,7 +81,12 @@ type Portal logic specialization interpreter obj1 obj2 r payload =
 type PortalComplex logic specialization interpreter obj1 obj2 r payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope, raiseId :: String -> ST.ST Region.Global Unit | r }
+      -> { id :: String
+         , parent :: String
+         , scope :: Scope
+         , raiseId :: String -> ST.ST Region.Global Unit
+         | r
+         }
       -> Entity logic (obj1 payload)
       -> specialization
       -> payload
@@ -94,7 +103,12 @@ type PortalComplex logic specialization interpreter obj1 obj2 r payload =
 type PortalSimple logic specialization interpreter obj1 obj2 r payload =
   { giveNewParent ::
       interpreter
-      -> { id :: String, parent :: String, scope :: Scope, raiseId :: String -> ST.ST Region.Global Unit | r }
+      -> { id :: String
+         , parent :: String
+         , scope :: Scope
+         , raiseId :: String -> ST.ST Region.Global Unit
+         | r
+         }
       -> Entity logic (obj1 payload)
       -> specialization
       -> payload
@@ -132,13 +146,21 @@ internalPortalSimpleComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = do
-    av <- mutAr (toArray toBeam $> { id: "", entity: Element' (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty)) })
+    av <- mutAr
+      ( toArray toBeam $>
+          { id: ""
+          , entity: Element'
+              (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty))
+          }
+      )
     actualized' <- traverseWithIndex
       ( \ix entity -> toElt entity # \(Element elt) -> elt
           ( psr
               { parent = Nothing
               , scope = scopeF psr.scope
-              , raiseId = \id -> unsafeUpdateMutAr ix { id, entity: Element' entity } av
+              , raiseId = \id -> unsafeUpdateMutAr ix
+                  { id, entity: Element' entity }
+                  av
               }
           )
           interpreter
@@ -146,7 +168,9 @@ internalPortalSimpleComplex
       (toArray toBeam)
     let actualized = merge (map (snd <<< snd) actualized')
     let
-      asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
+      asIds
+        :: Array { id :: String, entity :: Entity logic (obj1 payload) }
+        -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
       asIds = unsafeCoerce
     idz <- asIds <$> (readAr av)
     let
@@ -161,15 +185,26 @@ internalPortalSimpleComplex
                 $ Tuple
                     ( compact
                         [ psr2.parent <#> \pt ->
-                            (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
+                            ( giveNewParent itp
+                                ( RB.build
+                                    ( RB.insert (Proxy :: _ "id") id >>>
+                                        RB.modify (Proxy :: _ "parent")
+                                          (const pt)
+                                    )
+                                    psr2
+                                )
+                                entity
+                                specialization
+                            )
                         ]
                     )
                 $ Tuple []
                 $ empty
         )
         idz
-    Tuple sub (Tuple unsub elt) <- flatten flatArgs psr interpreter (closure (injectable))
-    let onSubscribe = join $ [ sub ] <> map fst actualized'
+    Tuple sub (Tuple unsub elt) <- flatten flatArgs psr interpreter
+      (closure (injectable))
+    let onSubscribe = join $ map fst actualized' <> [ sub ]
     let
       onUnsubscribe = append unsub $ guard (not isGlobal) $ map
         (\{ id } -> deleteFromCache interpreter { id })
@@ -191,7 +226,9 @@ internalPortalComplexComplex
   -> Flatten logic interpreter obj2 r payload
   -> Portal logic specialization interpreter obj1 obj2 r payload
   -> Vect n (Entity logic (obj1 payload))
-  -> (Vect n (specialization -> Entity logic (obj1 payload)) -> Entity logic (obj2 payload))
+  -> ( Vect n (specialization -> Entity logic (obj1 payload))
+       -> Entity logic (obj2 payload)
+     )
   -> Entity logic (obj2 payload)
 internalPortalComplexComplex
   isGlobal
@@ -208,7 +245,13 @@ internalPortalComplexComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = do
-    av <- mutAr (toArray toBeam $> { id: "", entity: Element' (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty)) })
+    av <- mutAr
+      ( toArray toBeam $>
+          { id: ""
+          , entity: Element'
+              (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty))
+          }
+      )
     actualized' <- traverseWithIndex
       ( \ix -> Lazy.fix \f entity -> case entity of
           Element' beamable -> toElt beamable # \(Element elt) -> elt
@@ -224,7 +267,9 @@ internalPortalComplexComplex
       (toArray toBeam)
     let actualized = merge (map (snd <<< snd) actualized')
     let
-      asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
+      asIds
+        :: Array { id :: String, entity :: Entity logic (obj1 payload) }
+        -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
       asIds = unsafeCoerce
     idz <- asIds <$> (readAr av)
     let
@@ -236,15 +281,26 @@ internalPortalComplexComplex
                 $ Tuple
                     ( compact
                         [ psr2.parent <#> \pt ->
-                            (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
+                            ( giveNewParent itp
+                                ( RB.build
+                                    ( RB.insert (Proxy :: _ "id") id >>>
+                                        RB.modify (Proxy :: _ "parent")
+                                          (const pt)
+                                    )
+                                    psr2
+                                )
+                                entity
+                                specialization
+                            )
                         ]
                     )
                 $ Tuple []
                 $ empty
         )
         idz
-    Tuple sub (Tuple unsub elt) <- flatten flatArgs psr interpreter (closure (injectable))
-    let onSubscribe = join $ [ sub ] <> map fst actualized'
+    Tuple sub (Tuple unsub elt) <- flatten flatArgs psr interpreter
+      (closure (injectable))
+    let onSubscribe = join $ map fst actualized' <> [ sub ]
     let
       onUnsubscribe = append unsub $ guard (not isGlobal) $ map
         (\{ id } -> deleteFromCache interpreter { id })
@@ -284,7 +340,13 @@ internalPortalComplexSimple
   go psr interpreter = do
     -- we initialize a mutable array with empty ids and empty elements
     -- for each element in the portal vector
-    av <- mutAr (toArray toBeam $> { id: "", entity: Element' (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty)) })
+    av <- mutAr
+      ( toArray toBeam $>
+          { id: ""
+          , entity: Element'
+              (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty))
+          }
+      )
     -- We intercept all of the elements in the portal vector
     -- and turn them into instructions and events.
     --
@@ -314,7 +376,9 @@ internalPortalComplexSimple
     let actualized = merge (map (snd <<< snd) actualized')
     -- this is the id we'll use for deferred unloading
     let
-      asIds :: Array { id :: String, entity :: Entity logic (obj1 payload) } -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
+      asIds
+        :: Array { id :: String, entity :: Entity logic (obj1 payload) }
+        -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
       asIds = unsafeCoerce
     -- now, when we read the ids, we will have all of the ids of the "beamable" elements in the vector
     -- this is because the left-bind above that produces actualized' triggers all of the `raiseId` in the elements
@@ -334,7 +398,17 @@ internalPortalComplexSimple
                 $ Tuple
                     ( compact
                         [ psr2.parent <#> \pt ->
-                            (giveNewParent itp (RB.build (RB.insert (Proxy :: _ "id") id >>> RB.modify (Proxy :: _ "parent") (const pt)) psr2) entity specialization)
+                            ( giveNewParent itp
+                                ( RB.build
+                                    ( RB.insert (Proxy :: _ "id") id >>>
+                                        RB.modify (Proxy :: _ "parent")
+                                          (const pt)
+                                    )
+                                    psr2
+                                )
+                                entity
+                                specialization
+                            )
                         ]
                     )
                 $ Tuple []
@@ -346,7 +420,7 @@ internalPortalComplexSimple
     -- we get the top-level element yielded by the portal
     realized' <- realized psr interpreter
     -- here's everything we need on subscription, so we can issue it immediately
-    let onSubscribe = join $ Array.cons (fst realized') $ map fst actualized'
+    let onSubscribe = join $ map fst actualized' <> [ fst realized' ]
     -- When we unsubscribe from the portal, we want to delete everything
     -- with one of the ids we created.
     let
@@ -498,7 +572,8 @@ type Flatten logic interpreter obj r payload =
       -> payload
   , deferPayload :: interpreter -> List.List Int -> payload -> payload
   , forcePayload :: interpreter -> List.List Int -> payload
-  , redecorateDeferredPayload :: interpreter -> List.List Int -> payload -> payload
+  , redecorateDeferredPayload ::
+      interpreter -> List.List Int -> payload -> payload
   , toElt :: obj payload -> Element interpreter r payload
   }
 
@@ -508,7 +583,8 @@ flatten
   -> PSR r
   -> interpreter
   -> Entity logic (obj payload)
-  -> ST Global.Global (Tuple (Array payload) (Tuple (Array payload) (Event payload)))
+  -> ST Global.Global
+       (Tuple (Array payload) (Tuple (Array payload) (Event payload)))
 flatten
   flatArgs@
     { doLogic
@@ -531,7 +607,13 @@ flatten
     cancelInner <- Ref.new Object.empty
     initialEvent <- create
     let
-      subscriber :: forall m. MonadST Region.Global m => (payload -> m Unit) -> (payload -> Effect Unit) -> Tuple (Event (Child logic)) (Entity logic (obj payload)) -> m Unit
+      subscriber
+        :: forall m
+         . MonadST Region.Global m
+        => (payload -> m Unit)
+        -> (payload -> Effect Unit)
+        -> Tuple (Event (Child logic)) (Entity logic (obj payload))
+        -> m Unit
       subscriber k1 k2 inner =
         do
           fireId2 <- liftST $ ids interpreter
@@ -561,7 +643,9 @@ flatten
             (snd inner)
           for_ unsub $ k1 <<< deferPayload interpreter fireList
           for_ sub $ k1
-          c1 <- liftST $ subscribe (map (redecorateDeferredPayload interpreter fireList) evt) k2
+          c1 <- liftST $ subscribe
+            (map (redecorateDeferredPayload interpreter fireList) evt)
+            k2
           void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
             cancelInner
           void $ liftST $ Ref.write c1 eltsUnsub
@@ -596,7 +680,8 @@ flatten
                   cancelInner
               _, _ -> pure unit
           void $ liftST $ Ref.write c0 myUnsub
-          void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0) cancelInner
+          void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0)
+            cancelInner
     r <- Ref.new []
     let kInit i = void $ Ref.modify (_ <> [ i ]) r
     for_ initialChildren (subscriber kInit initialEvent.push)
@@ -638,7 +723,9 @@ fixComplexComplex
         av' <- Ref.read av
         case av', ii.parent of
           Just r, Just p'
-            | r /= p' -> pure $ Tuple [ connectToParent interpret { id: r, parent: p' } ] $ Tuple [] empty
+            | r /= p' -> pure
+                $ Tuple [ connectToParent interpret { id: r, parent: p' } ]
+                $ Tuple [] empty
           _, _ -> pure $ Tuple [] $ Tuple [] empty
     flatten flatArgs
       ( i
