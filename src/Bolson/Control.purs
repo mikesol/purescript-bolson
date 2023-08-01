@@ -17,7 +17,7 @@ module Bolson.Control
 
 import Prelude
 
-import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), EventfulElement(..), FixedChildren(..), PSR, Scope(..))
+import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), FixedChildren(..), PSR, Scope(..))
 import Control.Lazy as Lazy
 import Control.Monad.ST.Class (class MonadST, liftST)
 import Control.Monad.ST.Global as Global
@@ -132,7 +132,7 @@ internalPortalSimpleComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = do
-    av <- mutAr (toArray toBeam $> { id: "", entity: EventfulElement' (EventfulElement empty) })
+    av <- mutAr (toArray toBeam $> { id: "", entity: Element' (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty)) })
     actualized' <- traverseWithIndex
       ( \ix entity -> toElt entity # \(Element elt) -> elt
           ( psr
@@ -208,7 +208,7 @@ internalPortalComplexComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = do
-    av <- mutAr (toArray toBeam $> { id: "", entity: EventfulElement' (EventfulElement empty) })
+    av <- mutAr (toArray toBeam $> { id: "", entity: Element' (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty)) })
     actualized' <- traverseWithIndex
       ( \ix -> Lazy.fix \f entity -> case entity of
           Element' beamable -> toElt beamable # \(Element elt) -> elt
@@ -284,7 +284,7 @@ internalPortalComplexSimple
   go psr interpreter = do
     -- we initialize a mutable array with empty ids and empty elements
     -- for each element in the portal vector
-    av <- mutAr (toArray toBeam $> { id: "", entity: EventfulElement' (EventfulElement empty) })
+    av <- mutAr (toArray toBeam $> { id: "", entity: Element' (fromEltO1 (Element \_ _ -> pure $ Tuple [] $ Tuple [] empty)) })
     -- We intercept all of the elements in the portal vector
     -- and turn them into instructions and events.
     --
@@ -525,38 +525,6 @@ flatten
     o <- traverse (flatten flatArgs psr interpreter) f
     pure $ (map <<< map) merge
       $ foldMap (\(Tuple a (Tuple b c)) -> Tuple a (Tuple b [ c ])) o
-  EventfulElement' (EventfulElement e) -> do
-    usu0 <- Ref.new Nothing
-    usu1 <- Ref.new (pure unit)
-    -- this outer id represents the outer event
-    -- on unsubscribe, we kill everything under it
-    fireId1 <- ids interpreter
-    pure $ Tuple [] $ Tuple [ forcePayload interpreter (pure fireId1) ] $ makeEvent \k -> do
-      s <- subscribe (map (flatten flatArgs psr interpreter) e) \i -> do
-        -- we consult the inner id and unsubscribe everything
-        -- associated with it via a fire command
-        usus0 <- liftST $ Ref.read usu0
-        for_ usus0 $ k <<< forcePayload interpreter
-        -- like keepLater, we run the unsubscription effect
-        usus1 <- liftST $ Ref.read usu1
-        liftST $ usus1
-        -- we generate a fresh id for the inner event
-        fireId2 <- liftST $ ids interpreter
-        Tuple sub (Tuple unsub pld) <- liftST i
-        -- for everything that should happen upon subscription, we execute immediately
-        for_ sub $ k
-        let fireList = (fireId1 : fireId2 : List.Nil)
-        -- for unsubscription, we defer it via a load
-        for_ unsub $ k <<< deferPayload interpreter fireList
-        -- we stash the new fire id in case a new event comes down the pipe for the forcePayload above
-        void $ liftST $ Ref.write (Just (fireId1 : fireId2 : List.Nil)) usu0
-        -- for every event that is emitted, if anything is staged, we append the current list to that stage via redecoration
-        u <- liftST $ subscribe (map (redecorateDeferredPayload interpreter fireList) pld) k
-        -- we write the unsubscribe to trigger above
-        void $ liftST $ Ref.write u usu1
-      pure do
-        s
-        join (Ref.read usu1)
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren (Tuple initialChildren children)) -> do
     fireId1 <- ids interpreter
