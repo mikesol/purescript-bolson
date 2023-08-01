@@ -1,7 +1,9 @@
 { name = "bolson"
 , dependencies =
   [ "arrays"
+  , "bifunctors"
   , "control"
+  , "effect"
   , "fast-vect"
   , "filterable"
   , "foldable-traversable"

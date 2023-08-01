@@ -19,7 +19,7 @@ import Prelude
 
 import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), EventfulElement(..), FixedChildren(..), PSR, Scope(..))
 import Control.Lazy as Lazy
-import Control.Monad.ST.Class (liftST)
+import Control.Monad.ST.Class (class MonadST, liftST)
 import Control.Monad.ST.Global as Global
 import Control.Monad.ST.Global as Region
 import Control.Monad.ST.Internal (ST)
@@ -38,8 +38,8 @@ import Data.Traversable (traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import FRP.Event (Event, keepLatest, makeEvent, mapAccum, memoize, merge, subscribe)
-import FRP.Event.Class (once_)
+import Effect (Effect)
+import FRP.Event (Event, create, keepLatest, makeEvent, mapAccum, memoize, merge, subscribe)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -172,7 +172,7 @@ internalPortalSimpleComplex
     let onSubscribe = join $ [ sub ] <> map fst actualized'
     let
       onUnsubscribe = append unsub $ guard (not isGlobal) $ map
-        (\{ id } ->  deleteFromCache interpreter { id })
+        (\{ id } -> deleteFromCache interpreter { id })
         (toArray idz)
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
       u0 <- subscribe actualized k
@@ -247,7 +247,7 @@ internalPortalComplexComplex
     let onSubscribe = join $ [ sub ] <> map fst actualized'
     let
       onUnsubscribe = append unsub $ guard (not isGlobal) $ map
-        (\{ id } ->  deleteFromCache interpreter { id })
+        (\{ id } -> deleteFromCache interpreter { id })
         (toArray idz)
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
       u0 <- subscribe actualized k
@@ -351,7 +351,7 @@ internalPortalComplexSimple
     -- with one of the ids we created.
     let
       onUnsubscribe = guard (not isGlobal) $ map
-        (\{ id } ->  deleteFromCache interpreter { id })
+        (\{ id } -> deleteFromCache interpreter { id })
         (toArray idz)
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
       -- Triggers all of the effects in the beamable elements
@@ -487,7 +487,7 @@ portalComplexSimple
   toBeam
   closure
 
-data Stage = Begin | Middle | End
+data Stage = Listening | Closed
 
 type Flatten logic interpreter obj r payload =
   { doLogic :: logic -> interpreter -> String -> payload
@@ -544,7 +544,7 @@ flatten
         fireId2 <- liftST $ ids interpreter
         Tuple sub (Tuple unsub pld) <- liftST i
         -- for everything that should happen upon subscription, we execute immediately
-        for_ sub $ k 
+        for_ sub $ k
         let fireList = (fireId1 : fireId2 : List.Nil)
         -- for unsubscription, we defer it via a load
         for_ unsub $ k <<< deferPayload interpreter fireList
@@ -558,89 +558,87 @@ flatten
         s
         join (Ref.read usu1)
   Element' e -> element (toElt e)
-  DynamicChildren' (DynamicChildren children) -> do
+  DynamicChildren' (DynamicChildren (Tuple initialChildren children)) -> do
     fireId1 <- ids interpreter
     cancelInner <- Ref.new Object.empty
-    pure $ Tuple [] $ Tuple [ forcePayload interpreter $ pure fireId1 ] $ makeEvent \k -> do
-      cancelOuter <-
-        -- each child gets its own scope
-        subscribe children \inner ->
-          do
-            fireId2 <- liftST $ ids interpreter
-            -- holds the previous id
-            myUnsubId <- liftST $ ids interpreter
-            myUnsub <- liftST $ Ref.new (pure unit)
-            eltsUnsubId <- liftST $ ids interpreter
-            eltsUnsub <- liftST $ Ref.new (pure unit)
-            myIds <- liftST $ Ref.new []
-            myImmediateCancellation <- liftST $ Ref.new (pure unit)
-            myScope <- liftST $ Local <$>
-              ( case psr.scope of
-                  Global -> show <$> ids interpreter
-                  Local l -> pure l <> pure "!" <> show <$> ids interpreter
-              )
-            stageRef <- liftST $ Ref.new Begin
-            let fireList = (fireId1 : fireId2 : List.Nil)
-            c0 <- liftST $ subscribe inner \kid' -> do
-              stage <- liftST $ Ref.read stageRef
-              case kid', stage of
-                Logic logic, Middle -> do
-                  curId <- liftST $ Ref.read myIds
-                  traverse_ (k  <<< doLogic logic interpreter) curId
-                Remove, Middle -> do
-                  void $ liftST $ Ref.write End stageRef
-                  k $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
-                  let
-                    mic = do
-                      idRef <- liftST $ Ref.read myIds
-                      for_ idRef \old ->
-                        for_ psr.parent \pnt -> k
-                          ( disconnectElement interpreter
-                              { id: old, parent: pnt, scope: myScope }
-                          )
-                      myu <- liftST $ Ref.read myUnsub
-                      liftST myu
-                      eltu <- liftST $ Ref.read eltsUnsub
-                      liftST eltu
-                      void $ liftST $ Ref.modify
-                        (Object.delete $ show myUnsubId)
-                        cancelInner
-                      void $ liftST $ Ref.modify
-                        (Object.delete $ show eltsUnsubId)
-                        cancelInner
-                  void $ liftST $ Ref.write mic myImmediateCancellation
-                  mic
-                Insert kid, Begin -> do
-                  -- holds the current id
-                  void $ liftST $ Ref.write Middle stageRef
-                  Tuple sub (Tuple unsub evt) <- liftST $ flatten
-                    flatArgs
-                    ( psr
-                        { scope = myScope
-                        , raiseId = \id -> do
-                            void $ Ref.modify (append [ id ]) myIds
-                        }
+    initialEvent <- create
+    let
+      subscriber :: forall m. MonadST Region.Global m => (payload -> m Unit) -> (payload -> Effect Unit) -> Tuple (Event (Child logic)) (Entity logic (obj payload)) -> m Unit
+      subscriber k1 k2 inner =
+        do
+          fireId2 <- liftST $ ids interpreter
+          -- holds the previous id
+          myUnsubId <- liftST $ ids interpreter
+          myUnsub <- liftST $ Ref.new (pure unit)
+          eltsUnsubId <- liftST $ ids interpreter
+          eltsUnsub <- liftST $ Ref.new (pure unit)
+          myIds <- liftST $ Ref.new []
+          myScope <- liftST $ Local <$>
+            ( case psr.scope of
+                Global -> show <$> ids interpreter
+                Local l -> pure l <> pure "!" <> show <$> ids interpreter
+            )
+          stageRef <- liftST $ Ref.new Listening
+          let fireList = (fireId1 : fireId2 : List.Nil)
+          void $ liftST $ Ref.write Listening stageRef
+          Tuple sub (Tuple unsub evt) <- liftST $ flatten
+            flatArgs
+            ( psr
+                { scope = myScope
+                , raiseId = \id -> do
+                    void $ Ref.modify (append [ id ]) myIds
+                }
+            )
+            interpreter
+            (snd inner)
+          for_ unsub $ k1 <<< deferPayload interpreter fireList
+          for_ sub $ k1
+          c1 <- liftST $ subscribe (map (redecorateDeferredPayload interpreter fireList) evt) k2
+          void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
+            cancelInner
+          void $ liftST $ Ref.write c1 eltsUnsub
+          c0 <- liftST $ subscribe (fst inner) \kid' -> do
+            stage <- liftST $ Ref.read stageRef
+            case kid', stage of
+              Logic logic, Listening -> do
+                curId <- liftST $ Ref.read myIds
+                traverse_ (k2 <<< doLogic logic interpreter) curId
+              Remove, Listening -> do
+                void $ liftST $ Ref.write Closed stageRef
+                k2 $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
+                idRef <- liftST $ Ref.read myIds
+                for_ idRef \old ->
+                  for_ psr.parent \pnt -> k2
+                    ( disconnectElement interpreter
+                        { id: old, parent: pnt, scope: myScope }
                     )
-                    interpreter
-                    -- hack to make sure that kid only ever raises its
-                    -- ID once
-                    -- if it is anything other than an element we wrap it in one
-                    -- otherwise, we'd risk raising many ids to a parent
-                    kid
-                  for_ unsub $ k <<< deferPayload interpreter fireList
-                  for_ sub $ k 
-                  c1 <- liftST $ subscribe (map (redecorateDeferredPayload interpreter fireList) evt) k
-                  void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
-                    cancelInner
-                  void $ liftST $ Ref.write c1 eltsUnsub
-                _, _ -> pure unit
-            void $ liftST $ Ref.write c0 myUnsub
-            void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0) cancelInner
-            mican <- liftST $ Ref.read myImmediateCancellation
-            mican
-      pure do
-        (Ref.read cancelInner) >>= foldl (*>) (pure unit)
-        cancelOuter
+                myu <- liftST $ Ref.read myUnsub
+                liftST myu
+                eltu <- liftST $ Ref.read eltsUnsub
+                liftST eltu
+                void $ liftST $ Ref.modify
+                  (Object.delete $ show myUnsubId)
+                  cancelInner
+                void $ liftST $ Ref.modify
+                  (Object.delete $ show eltsUnsubId)
+                  cancelInner
+              _, _ -> pure unit
+          void $ liftST $ Ref.write c0 myUnsub
+          void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0) cancelInner
+    r <- Ref.new []
+    let kInit i = void $ Ref.modify (_ <> [ i ]) r
+    for_ initialChildren (subscriber kInit initialEvent.push)
+    o <- Ref.read r
+    pure $ Tuple o $ Tuple [ forcePayload interpreter $ pure fireId1 ] $ merge
+      [ initialEvent.event
+      , makeEvent \k -> do
+          cancelOuter <-
+            -- each child gets its own scope
+            subscribe children (subscriber k k)
+          pure do
+            (Ref.read cancelInner) >>= foldl (*>) (pure unit)
+            cancelOuter
+      ]
   where
   element (Element e) = e psr interpreter
 
@@ -687,12 +685,12 @@ switcher
    . (i -> Entity logic obj)
   -> Event i
   -> Entity logic obj
-switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
+switcher f event = DynamicChildren' $ DynamicChildren $ Tuple Nothing $ keepLatest
   $ memoize (counter event) \cenv -> map
-      ( \(p /\ n) -> merge
-          [ ((const Remove) <$> filter (eq (n + 1) <<< snd) (counter event))
-          , once_ event (Insert $ f p)
-          ]
+      ( \(p /\ n) -> Tuple
+          ((const Remove) <$> filter (eq (n + 1) <<< snd) (counter event))
+          (f p)
+
       )
       cenv
   where
