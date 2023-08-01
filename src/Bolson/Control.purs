@@ -563,8 +563,8 @@ flatten
     cancelInner <- Ref.new Object.empty
     initialEvent <- create
     let
-      subscriber :: forall m. MonadST Region.Global m => (payload -> m Unit) -> (payload -> Effect Unit) -> Tuple (Event (Child logic)) (Entity logic (obj payload)) -> m Unit
-      subscriber k1 k2 inner =
+      subscriber :: forall m. MonadST Region.Global m => Array logic -> (payload -> m Unit) -> (payload -> Effect Unit) -> Tuple (Event (Child logic)) (Entity logic (obj payload)) -> m Unit
+      subscriber logic k1 k2 inner =
         do
           fireId2 <- liftST $ ids interpreter
           -- holds the previous id
@@ -597,12 +597,16 @@ flatten
           void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
             cancelInner
           void $ liftST $ Ref.write c1 eltsUnsub
+          curId <- liftST $ Ref.read myIds
+          for_ curId \cid ->
+            for_ logic \lgc ->
+               k1 (doLogic lgc interpreter cid)
           c0 <- liftST $ subscribe (fst inner) \kid' -> do
             stage <- liftST $ Ref.read stageRef
             case kid', stage of
-              Logic logic, Listening -> do
-                curId <- liftST $ Ref.read myIds
-                traverse_ (k2 <<< doLogic logic interpreter) curId
+              Logic lgc, Listening -> do
+                cid <- liftST $ Ref.read myIds
+                traverse_ (k2 <<< doLogic lgc interpreter) cid
               Remove, Listening -> do
                 void $ liftST $ Ref.write Closed stageRef
                 k2 $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
@@ -627,14 +631,14 @@ flatten
           void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0) cancelInner
     r <- Ref.new []
     let kInit i = void $ Ref.modify (_ <> [ i ]) r
-    for_ initialChildren (subscriber kInit initialEvent.push)
+    for_ (map snd initialChildren) (subscriber [] kInit initialEvent.push)
     o <- Ref.read r
     pure $ Tuple o $ Tuple [ forcePayload interpreter $ pure fireId1 ] $ merge
       [ initialEvent.event
       , makeEvent \k -> do
           cancelOuter <-
             -- each child gets its own scope
-            subscribe children (subscriber k k)
+            subscribe children (subscriber [] k k)
           pure do
             (Ref.read cancelInner) >>= foldl (*>) (pure unit)
             cancelOuter
@@ -685,7 +689,7 @@ switcher
    . (i -> Entity logic obj)
   -> Event i
   -> Entity logic obj
-switcher f event = DynamicChildren' $ DynamicChildren $ Tuple Nothing $ keepLatest
+switcher f event = DynamicChildren' $ DynamicChildren $ Tuple [] $ keepLatest
   $ memoize (counter event) \cenv -> map
       ( \(p /\ n) -> Tuple
           ((const Remove) <$> filter (eq (n + 1) <<< snd) (counter event))
