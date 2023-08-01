@@ -206,9 +206,11 @@ internalPortalSimpleComplex
       (closure (injectable))
     let onSubscribe = join $ map fst actualized' <> [ sub ]
     let
-      onUnsubscribe = append unsub $ guard (not isGlobal) $ map
-        (\{ id } -> deleteFromCache interpreter { id })
-        (toArray idz)
+      onUnsubscribe = append unsub $ guard (not isGlobal) $
+        ( map
+            (\{ id } -> deleteFromCache interpreter { id })
+            (toArray idz) <> join (map (fst <<< snd) actualized')
+        )
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
       u0 <- subscribe actualized k
       u1 <- subscribe elt k
@@ -302,9 +304,10 @@ internalPortalComplexComplex
       (closure (injectable))
     let onSubscribe = join $ map fst actualized' <> [ sub ]
     let
-      onUnsubscribe = append unsub $ guard (not isGlobal) $ map
-        (\{ id } -> deleteFromCache interpreter { id })
-        (toArray idz)
+      onUnsubscribe = append unsub $ guard (not isGlobal) $
+        map
+          (\{ id } -> deleteFromCache interpreter { id })
+          (toArray idz) <> join (map (fst <<< snd) actualized')
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
       u0 <- subscribe actualized k
       u1 <- subscribe elt k
