@@ -427,9 +427,9 @@ internalPortalComplexSimple
     -- When we unsubscribe from the portal, we want to delete everything
     -- with one of the ids we created.
     let
-      onUnsubscribe = guard (not isGlobal) $ map
+      onUnsubscribe = append (fst (snd realized')) $ guard (not isGlobal) $ map
         (\{ id } -> deleteFromCache interpreter { id })
-        (toArray idz)
+        (toArray idz) <> join (map (fst <<< snd) actualized')
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
       -- Triggers all of the effects in the beamable elements
       u0 <- subscribe actualized k
