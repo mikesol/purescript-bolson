@@ -605,13 +605,17 @@ flatten
                 traverse_ (k2 <<< doLogic lgc interpreter) cid
               Remove, Listening -> do
                 void $ liftST $ Ref.write Closed stageRef
-                k2 $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
                 idRef <- liftST $ Ref.read myIds
                 for_ idRef \old ->
                   for_ psr.parent \pnt -> k2
                     ( disconnectElement interpreter
                         { id: old, parent: pnt, scope: myScope }
                     )
+                -- we force after the disconnect element
+                -- because assumedly the forcing has clean-up-y stuff
+                -- so we want to disconnect before we clean up, lest
+                -- we try to disconnect something that has already been deleted
+                k2 $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
                 myu <- liftST $ Ref.read myUnsub
                 liftST myu
                 eltu <- liftST $ Ref.read eltsUnsub
