@@ -23,7 +23,7 @@ data Child (logic :: Type)
 
 newtype DynamicChildren logic obj = DynamicChildren
   ( Tuple
-      (Array (Tuple (Event (Child logic)) (ST ST.Global (Entity logic obj))))
+      (Array (Tuple (Event (Child logic)) (Entity logic obj)))
       (Event (Tuple (Event (Child logic)) (Entity logic obj)))
   )
 
@@ -50,7 +50,7 @@ data Entity logic obj
 instance Functor (Entity logic) where
   map f = case _ of
     DynamicChildren' (DynamicChildren a) ->
-      DynamicChildren' (DynamicChildren (bimap (map (map (map (map f)))) (map (map (map f))) a))
+      DynamicChildren' (DynamicChildren (bimap (map (map (map f))) (map (map (map f))) a))
     FixedChildren' (FixedChildren a) ->
       FixedChildren' (FixedChildren (map (map f) a))
     Element' a -> Element' (f a)
@@ -64,7 +64,7 @@ fixed a = FixedChildren' (FixedChildren a)
 dyn
   :: forall logic obj
    . Tuple
-       (Array (Tuple (Event (Child logic)) (ST ST.Global (Entity logic obj))))
+       (Array (Tuple (Event (Child logic)) (Entity logic obj)))
        (Event (Tuple (Event (Child logic)) (Entity logic obj)))
   -> Entity logic obj
 dyn a = DynamicChildren' (DynamicChildren a)
