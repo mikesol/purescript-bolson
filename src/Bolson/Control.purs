@@ -185,17 +185,18 @@ internalPortalSimpleComplex
                 $ Tuple
                     ( compact
                         [ psr2.parent <#> \pt ->
-                            ( giveNewParent itp
-                                ( RB.build
-                                    ( RB.insert (Proxy :: _ "id") id >>>
-                                        RB.modify (Proxy :: _ "parent")
-                                          (const pt)
-                                    )
-                                    psr2
-                                )
-                                entity
-                                specialization
-                            )
+                            pure
+                              ( giveNewParent itp
+                                  ( RB.build
+                                      ( RB.insert (Proxy :: _ "id") id >>>
+                                          RB.modify (Proxy :: _ "parent")
+                                            (const pt)
+                                      )
+                                      psr2
+                                  )
+                                  entity
+                                  specialization
+                              )
                         ]
                     )
                 $ Tuple []
@@ -208,7 +209,7 @@ internalPortalSimpleComplex
     let
       onUnsubscribe = append unsub $ guard (not isGlobal) $
         ( map
-            (\{ id } -> deleteFromCache interpreter { id })
+            (\{ id } -> pure $ deleteFromCache interpreter { id })
             (toArray idz) <> join (map (fst <<< snd) actualized')
         )
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
@@ -283,17 +284,18 @@ internalPortalComplexComplex
                 $ Tuple
                     ( compact
                         [ psr2.parent <#> \pt ->
-                            ( giveNewParent itp
-                                ( RB.build
-                                    ( RB.insert (Proxy :: _ "id") id >>>
-                                        RB.modify (Proxy :: _ "parent")
-                                          (const pt)
-                                    )
-                                    psr2
-                                )
-                                entity
-                                specialization
-                            )
+                            pure
+                              ( giveNewParent itp
+                                  ( RB.build
+                                      ( RB.insert (Proxy :: _ "id") id >>>
+                                          RB.modify (Proxy :: _ "parent")
+                                            (const pt)
+                                      )
+                                      psr2
+                                  )
+                                  entity
+                                  specialization
+                              )
                         ]
                     )
                 $ Tuple []
@@ -306,7 +308,7 @@ internalPortalComplexComplex
     let
       onUnsubscribe = append unsub $ guard (not isGlobal) $
         map
-          (\{ id } -> deleteFromCache interpreter { id })
+          (\{ id } -> pure $ deleteFromCache interpreter { id })
           (toArray idz) <> join (map (fst <<< snd) actualized')
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
       u0 <- subscribe actualized k
@@ -401,17 +403,18 @@ internalPortalComplexSimple
                 $ Tuple
                     ( compact
                         [ psr2.parent <#> \pt ->
-                            ( giveNewParent itp
-                                ( RB.build
-                                    ( RB.insert (Proxy :: _ "id") id >>>
-                                        RB.modify (Proxy :: _ "parent")
-                                          (const pt)
-                                    )
-                                    psr2
-                                )
-                                entity
-                                specialization
-                            )
+                            pure
+                              ( giveNewParent itp
+                                  ( RB.build
+                                      ( RB.insert (Proxy :: _ "id") id >>>
+                                          RB.modify (Proxy :: _ "parent")
+                                            (const pt)
+                                      )
+                                      psr2
+                                  )
+                                  entity
+                                  specialization
+                              )
                         ]
                     )
                 $ Tuple []
@@ -427,9 +430,10 @@ internalPortalComplexSimple
     -- When we unsubscribe from the portal, we want to delete everything
     -- with one of the ids we created.
     let
-      onUnsubscribe = append (fst (snd realized')) $ guard (not isGlobal) $ map
-        (\{ id } -> deleteFromCache interpreter { id })
-        (toArray idz) <> join (map (fst <<< snd) actualized')
+      onUnsubscribe = append (fst (snd realized')) $ guard (not isGlobal) $
+        map
+          (\{ id } -> pure $ deleteFromCache interpreter { id })
+          (toArray idz) <> join (map (fst <<< snd) actualized')
     pure $ Tuple onSubscribe $ Tuple onUnsubscribe $ makeEvent \k -> do
       -- Triggers all of the effects in the beamable elements
       u0 <- subscribe actualized k
@@ -587,7 +591,7 @@ flatten
   -> interpreter
   -> Entity logic (obj payload)
   -> ST Global.Global
-       (Tuple (Array payload) (Tuple (Array payload) (Event payload)))
+       (Tuple (Array (ST Global.Global payload)) (Tuple (Array (ST Global.Global payload)) (Event payload)))
 flatten
   flatArgs@
     { doLogic
@@ -613,7 +617,7 @@ flatten
       subscriber
         :: forall m
          . MonadST Region.Global m
-        => (payload -> m Unit)
+        => (ST Region.Global payload -> m Unit)
         -> (payload -> Effect Unit)
         -> Tuple (Event (Child logic)) (Entity logic (obj payload))
         -> m Unit
@@ -644,7 +648,7 @@ flatten
             )
             interpreter
             (snd inner)
-          for_ unsub $ k1 <<< deferPayload interpreter fireList
+          for_ unsub $ k1 <<< map (deferPayload interpreter fireList)
           for_ sub $ k1
           c1 <- liftST $ subscribe
             (map (redecorateDeferredPayload interpreter fireList) evt)
@@ -689,12 +693,12 @@ flatten
     let kInit i = void $ Ref.modify (_ <> [ i ]) r
     for_ initialChildren (subscriber kInit initialEvent.push)
     o <- Ref.read r
-    pure $ Tuple o $ Tuple [ forcePayload interpreter $ pure fireId1 ] $ merge
+    pure $ Tuple o $ Tuple [ pure (forcePayload interpreter $ pure fireId1) ] $ merge
       [ initialEvent.event
       , makeEvent \k -> do
           cancelOuter <-
             -- each child gets its own scope
-            subscribe children (subscriber k k)
+            subscribe children (subscriber (liftST >=> k) k)
           pure do
             (Ref.read cancelInner) >>= foldl (*>) (pure unit)
             cancelOuter
@@ -727,7 +731,7 @@ fixComplexComplex
         case av', ii.parent of
           Just r, Just p'
             | r /= p' -> pure
-                $ Tuple [ connectToParent interpret { id: r, parent: p' } ]
+                $ Tuple [ pure $ connectToParent interpret { id: r, parent: p' } ]
                 $ Tuple [] empty
           _, _ -> pure $ Tuple [] $ Tuple [] empty
     flatten flatArgs
