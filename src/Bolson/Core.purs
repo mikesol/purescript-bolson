@@ -2,31 +2,33 @@ module Bolson.Core where
 
 import Prelude
 
-import Control.Monad.ST as ST
-import Control.Monad.ST.Global as Region
+import Control.Monad.ST (ST)
+import Control.Monad.ST.Global as ST
+import Data.Bifunctor (bimap)
 import Data.Maybe (Maybe)
-import Effect (Effect)
-import FRP.Event (Event, bus)
-import FRP.Event.VBus (class VBus, V, vbus)
-import Prim.RowList (class RowToList)
-import Type.Proxy (Proxy)
+import Data.Tuple (Tuple)
+import FRP.Event (Event)
 
-newtype Element interpreter r payload = Element
-  (PSR r -> interpreter -> Event payload)
+type HeadElement' interpreter payload =
+  interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array payload) (Event payload)))
 
-data Child (logic :: Type) (obj :: Type)
-  = Insert (Entity logic obj)
-  | Remove
+type Element' interpreter r payload =
+  PSR r -> HeadElement' interpreter payload
+
+newtype Element interpreter r payload = Element (Element' interpreter r payload)
+
+data Child (logic :: Type)
+  = Remove
   | Logic logic
 
 newtype DynamicChildren logic obj = DynamicChildren
-  (Event (Event (Child logic obj)))
+  ( Tuple
+      (Array (Tuple (Event (Child logic)) (Entity logic obj)))
+      (Event (Tuple (Event (Child logic)) (Entity logic obj)))
+  )
 
 newtype FixedChildren logic obj = FixedChildren
   (Array (Entity logic obj))
-
-newtype EventfulElement logic obj = EventfulElement
-  (Event (Entity logic obj))
 
 data Scope = Local String | Global
 
@@ -36,15 +38,22 @@ derive instance Ord Scope
 type PSR r =
   { parent :: Maybe String
   , scope :: Scope
-  , raiseId :: String -> ST.ST Region.Global Unit
+  , raiseId :: String -> ST ST.Global Unit
   | r
   }
 
 data Entity logic obj
   = DynamicChildren' (DynamicChildren logic obj)
   | FixedChildren' (FixedChildren logic obj)
-  | EventfulElement' (EventfulElement logic obj)
   | Element' obj
+
+instance Functor (Entity logic) where
+  map f = case _ of
+    DynamicChildren' (DynamicChildren a) ->
+      DynamicChildren' (DynamicChildren (bimap (map (map (map f))) (map (map (map f))) a))
+    FixedChildren' (FixedChildren a) ->
+      FixedChildren' (FixedChildren (map (map f) a))
+    Element' a -> Element' (f a)
 
 fixed
   :: forall logic obj
@@ -54,27 +63,8 @@ fixed a = FixedChildren' (FixedChildren a)
 
 dyn
   :: forall logic obj
-   . Event (Event (Child logic obj))
+   . Tuple
+       (Array (Tuple (Event (Child logic)) (Entity logic obj)))
+       (Event (Tuple (Event (Child logic)) (Entity logic obj)))
   -> Entity logic obj
 dyn a = DynamicChildren' (DynamicChildren a)
-
-envy
-  :: forall logic obj
-   . Event (Entity logic obj)
-  -> Entity logic obj
-envy a = EventfulElement' (EventfulElement a)
-
-bussed
-  :: forall logic obj a
-   . ((a -> Effect Unit) -> Event a -> Entity logic obj)
-  -> Entity logic obj
-bussed f = EventfulElement' (EventfulElement (bus f))
-
-vbussed
-  :: forall logic obj rbus bus push event
-   . RowToList bus rbus
-  => VBus rbus push event
-  => Proxy (V bus)
-  -> ({ | push } -> { | event } -> Entity logic obj)
-  -> Entity logic obj
-vbussed px f = EventfulElement' (EventfulElement (vbus px f))
