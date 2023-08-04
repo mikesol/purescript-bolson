@@ -173,21 +173,18 @@ internalPortalSimpleComplex
       -- so that we are dealing with a singleton (Element'), otherwise it gets too thorny.
       let
         actualized = mapWithIndex
-          ( \ix -> Lazy.fix \ff entity -> case entity of
-              Element' beamable -> toElt beamable # \(Element elt) -> sample
-                ( elt
-                    ( psr
-                        { parent = Nothing
-                        , scope = scopeF psr.scope
-                        , raiseId = \id -> unsafeUpdateMutAr ix { id, entity } av
-                        }
-                    )
-                    interpreter
-                )
-                e
-              _ -> ff (wrapElt entity)
+          ( \ix entity -> toElt entity # \(Element elt) -> elt
+          ( psr
+              { parent = Nothing
+              , scope = scopeF psr.scope
+              , raiseId = \id -> unsafeUpdateMutAr ix
+                  { id, entity: Element' entity }
+                  av
+              }
           )
-          (toArray toBeam)
+          interpreter
+      )
+      (toArray toBeam)
       acsu <- subscribe (merge actualized) kx
       void $ Ref.modify (_ *> acsu) urf
       -- this is the id we'll use for deferred unloading
@@ -230,7 +227,7 @@ internalPortalSimpleComplex
           )
           idz
         -- now, the elements are simply the evaluation of the closure
-        Element realized = toEltO2 (closure (injectable))
+        Element realized = toElt (closure (injectable))
       resu <- subscribe (sample (realized psr interpreter) e) kx
       void $ Ref.modify (_ *> resu) urf
       -- When we unsubscribe from the portal, we want to delete everything
@@ -297,7 +294,7 @@ internalPortalComplexComplex
       let
         actualized = mapWithIndex
           ( \ix -> Lazy.fix \ff entity -> case entity of
-              Element' beamable -> toEltO1 beamable # \(Element elt) -> sample
+              Element' beamable -> toElt beamable # \(Element elt) -> sample
                 ( elt
                     ( psr
                         { parent = Nothing
@@ -353,7 +350,7 @@ internalPortalComplexComplex
           )
           idz
         -- now, the elements are simply the evaluation of the closure
-        Element realized = toEltO2 (closure (injectable))
+        Element realized = toElt (closure (injectable))
       resu <- subscribe (sample (realized psr interpreter) e) kx
       void $ Ref.modify (_ *> resu) urf
       -- When we unsubscribe from the portal, we want to delete everything
