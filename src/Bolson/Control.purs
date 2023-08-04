@@ -19,8 +19,7 @@ import Prelude
 
 import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), FixedChildren(..), PSR, Scope(..))
 import Control.Lazy as Lazy
-import Control.Monad.ST.Class (class MonadST, liftST)
-import Control.Monad.ST.Global as Global
+import Control.Monad.ST.Class (liftST)
 import Control.Monad.ST.Global as Region
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
@@ -28,19 +27,15 @@ import Control.Monad.ST.Internal as ST
 import Control.Plus (empty)
 import Data.FastVect.FastVect (toArray, Vect)
 import Data.Filterable (compact, filter)
-import Data.Foldable (foldMap, foldl, for_, traverse_)
+import Data.Foldable (foldl, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List ((:))
 import Data.List as List
 import Data.Maybe (Maybe(..))
-import Data.Monoid (guard)
-import Data.Traversable (traverse)
-import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Tuple.Nested (type (/\), (/\))
-import Effect (Effect)
 import FRP.Behavior (Behavior, behavior, sample)
-import FRP.Event (Event, Subscriber(..), create, keepLatest, makeEvent, makeLemmingEvent, mapAccum, memoize, merge)
+import FRP.Event (Event, keepLatest, makeLemmingEvent, mapAccum, memoize, merge)
 import FRP.Event.Class (once)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
@@ -174,18 +169,21 @@ internalPortalSimpleComplex
       -- so that we are dealing with a singleton (Element'), otherwise it gets too thorny.
       let
         actualized = mapWithIndex
-          ( \ix entity -> toElt entity # \(Element elt) -> elt
-              ( psr
-                  { parent = Nothing
-                  , scope = scopeF psr.scope
-                  , raiseId = \id -> unsafeUpdateMutAr ix
-                      { id, entity: Element' entity }
-                      av
-                  }
+          ( \ix entity -> toElt entity # \(Element elt) -> sample
+              ( elt
+                  ( psr
+                      { parent = Nothing
+                      , scope = scopeF psr.scope
+                      , raiseId = \id -> unsafeUpdateMutAr ix
+                          { id, entity: Element' entity }
+                          av
+                      }
+                  )
+                  interpreter
               )
-              interpreter
+              e
           )
-      (toArray toBeam)
+          (toArray toBeam)
       acsu <- subscribe (merge actualized) kx
       void $ Ref.modify (_ *> acsu) urf
       -- this is the id we'll use for deferred unloading
@@ -205,7 +203,7 @@ internalPortalSimpleComplex
       -- and provide a side-effect to run immediately upon subscription, meaning the give-new-parent
       let
         injectable = map
-          ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
+          ( \{ id, entity } specialization -> fromEltO1 $ Element
               \psr2 itp -> behavior \ne -> makeLemmingEvent \sub2 kk -> sub2 ne \ff -> do
                 liftST $ psr2.raiseId id
                 for_
@@ -231,7 +229,7 @@ internalPortalSimpleComplex
 
         realized = flatten flatArgs (closure injectable) psr interpreter
 
-      resu <- subscribe (sample (realized psr interpreter) e) kx
+      resu <- subscribe (sample realized e) kx
       void $ Ref.modify (_ *> resu) urf
       -- When we unsubscribe from the portal, we want to delete everything
       -- with one of the ids we created.
@@ -698,7 +696,7 @@ flatten
           case kid', stage of
             Logic lgc, Listening -> do
               cid <- liftST $ Ref.read myIds
-              for_ cid (k0 <<< f <<< doLogic lgc interpreter) 
+              for_ cid (k0 <<< f <<< doLogic lgc interpreter)
             Remove, Listening -> do
               void $ liftST $ Ref.write Closed stageRef
               idRef <- liftST $ Ref.read myIds
@@ -751,30 +749,37 @@ fixComplexComplex
 fixComplexComplex
   flatArgs
   { connectToParent, fromElt }
-  f = Element' $ fromElt $ Element go
+  fx = Element' $ fromElt $ Element go
   where
-  go i interpret = do
-    av <- Ref.new Nothing
-    let
-      nn = f $ Element' $ fromElt $ Element \ii _ -> do
-        av' <- Ref.read av
-        case av', ii.parent of
-          Just r, Just p'
-            | r /= p' -> pure
-                $ Tuple [ connectToParent interpret { id: r, parent: p' } ]
-                $ Tuple [] empty
-          _, _ -> pure $ Tuple [] $ Tuple [] empty
-    flatten flatArgs
-      ( i
-          { parent = i.parent
-          , scope = i.scope
-          , raiseId = \s -> do
-              i.raiseId s
-              void $ Ref.write (Just s) av
-          }
-      )
-      interpret
-      nn
+  go i interpret = behavior \ez -> makeLemmingEvent \subex kz -> do
+    urf <- Ref.new (pure unit)
+    uu <- subex ez \_ -> do
+      av <- Ref.new Nothing
+      let
+        nn = fx $ Element' $ fromElt $ Element \ii _ -> behavior \e -> makeLemmingEvent \subscribe k -> subscribe e \f -> do
+          av' <- Ref.read av
+          case av', ii.parent of
+            Just r, Just p'
+              | r /= p' -> k $ f $ connectToParent interpret { id: r, parent: p' }
+            _, _ -> pure unit
+      ud <- subex (sample
+        ( flatten flatArgs
+            nn
+            ( i
+                { parent = i.parent
+                , scope = i.scope
+                , raiseId = \s -> do
+                    i.raiseId s
+                    void $ Ref.write (Just s) av
+                }
+            )
+            interpret
+        )
+        ez) kz
+      void $ Ref.modify (_ *> ud) urf
+    pure do
+      join (Ref.read urf)
+      uu
 
 switcher
   :: forall i logic obj
