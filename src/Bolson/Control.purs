@@ -41,6 +41,7 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Effect (Effect)
 import FRP.Behavior (Behavior, behavior, sample)
 import FRP.Event (Event, Subscriber(..), create, keepLatest, makeEvent, makeLemmingEvent, mapAccum, memoize, merge)
+import FRP.Event.Class (once)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -228,7 +229,7 @@ internalPortalSimpleComplex
           idz
         -- now, the elements are simply the evaluation of the closure
 
-        Element realized = flatten flatArgs (closure (injectable)) psr interpreter
+        Element realized = flatten flatArgs (closure injectable) psr interpreter
 
       resu <- subscribe (sample (realized psr interpreter) e) kx
       void $ Ref.modify (_ *> resu) urf
@@ -352,9 +353,9 @@ internalPortalComplexComplex
           )
           idz
         -- now, the elements are simply the evaluation of the closure
-        Element realized = flatten flatArgs (closure (injectable)) psr interpreter
+        realized = flatten flatArgs (closure (injectable)) psr interpreter
 
-      resu <- subscribe (sample (realized psr interpreter) e) kx
+      resu <- subscribe (sample realized e) kx
       void $ Ref.modify (_ *> resu) urf
       -- When we unsubscribe from the portal, we want to delete everything
       -- with one of the ids we created.
@@ -655,83 +656,76 @@ flatten
     ugh <- subscribe e0 \f -> do
       fireId1 <- liftST $ ids interpreter
       k0 $ f (deferPayload interpreter List.Nil (forcePayload interpreter $ pure fireId1))
-      let
-        subscriber
-          :: forall m
-           . MonadST Region.Global m
-          => (payload -> m Unit)
-          -> (payload -> Effect Unit)
-          -> Tuple (Event (Child logic)) (Entity logic (obj payload))
-          -> m Unit
-        subscriber k1 k2 inner =
-          do
-            fireId2 <- liftST $ ids interpreter
-            -- holds the previous id
-            myUnsubId <- liftST $ ids interpreter
-            myUnsub <- liftST $ Ref.new (pure unit)
-            eltsUnsubId <- liftST $ ids interpreter
-            eltsUnsub <- liftST $ Ref.new (pure unit)
-            myIds <- liftST $ Ref.new []
-            myScope <- liftST $ Local <$>
-              ( case psr.scope of
-                  Global -> show <$> ids interpreter
-                  Local l -> pure l <> pure "!" <> show <$> ids interpreter
-              )
-            stageRef <- liftST $ Ref.new Listening
-            let fireList = (fireId1 : fireId2 : List.Nil)
-            void $ liftST $ Ref.write Listening stageRef
-            let evt = flatten
-              flatArgs
-              ( psr
-                  { scope = myScope
-                  , raiseId = \id -> do
-                      void $ Ref.modify (append [ id ]) myIds
-                  }
-              )
-              interpreter
-              (snd inner)
-            for_ unsub $ k1 <<< deferPayload interpreter fireList
-            for_ sub $ k1
-            c1 <- liftST $ subscribe
-              (map (redecorateDeferredPayload interpreter fireList) evt)
-              k2
-            void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
-              cancelInner
-            void $ liftST $ Ref.write c1 eltsUnsub
-            c0 <- liftST $ subscribe (fst inner) \kid' -> do
-              stage <- liftST $ Ref.read stageRef
-              case kid', stage of
-                Logic lgc, Listening -> do
-                  cid <- liftST $ Ref.read myIds
-                  traverse_ (k2 <<< doLogic lgc interpreter) cid
-                Remove, Listening -> do
-                  void $ liftST $ Ref.write Closed stageRef
-                  idRef <- liftST $ Ref.read myIds
-                  for_ idRef \old ->
-                    for_ psr.parent \pnt -> k2
-                      ( disconnectElement interpreter
-                          { id: old, parent: pnt, scope: myScope }
-                      )
-                  -- we force after the disconnect element
-                  -- because assumedly the forcing has clean-up-y stuff
-                  -- so we want to disconnect before we clean up, lest
-                  -- we try to disconnect something that has already been deleted
-                  k2 $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
-                  myu <- liftST $ Ref.read myUnsub
-                  liftST myu
-                  eltu <- liftST $ Ref.read eltsUnsub
-                  liftST eltu
-                  void $ liftST $ Ref.modify
-                    (Object.delete $ show myUnsubId)
-                    cancelInner
-                  void $ liftST $ Ref.modify
-                    (Object.delete $ show eltsUnsubId)
-                    cancelInner
-                _, _ -> pure unit
-            void $ liftST $ Ref.write c0 myUnsub
-            void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0)
-              cancelInner
-      cancelOuter <- subscribe children (subscriber k0 k0)
+      cancelOuter <- subscribe children \inner -> do
+        fireId2 <- liftST $ ids interpreter
+        -- holds the previous id
+        myUnsubId <- liftST $ ids interpreter
+        myUnsub <- liftST $ Ref.new (pure unit)
+        eltsUnsubId <- liftST $ ids interpreter
+        eltsUnsub <- liftST $ Ref.new (pure unit)
+        myIds <- liftST $ Ref.new []
+        myScope <- liftST $ Local <$>
+          ( case psr.scope of
+              Global -> show <$> ids interpreter
+              Local l -> pure l <> pure "!" <> show <$> ids interpreter
+          )
+        stageRef <- liftST $ Ref.new Listening
+        let fireList = (fireId1 : fireId2 : List.Nil)
+        void $ liftST $ Ref.write Listening stageRef
+        -- for the inner dyn, we pass it a singleton via `once`
+        let
+          evt = sample
+            ( flatten
+                flatArgs
+                (snd inner)
+                ( psr
+                    { scope = myScope
+                    , raiseId = \id -> do
+                        void $ Ref.modify (append [ id ]) myIds
+                    }
+                )
+                interpreter
+            )
+            (once children $> identity)
+        c1 <- liftST $ subscribe
+          (map (redecorateDeferredPayload interpreter fireList) evt)
+          (k0 <<< f)
+        void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
+          cancelInner
+        void $ liftST $ Ref.write c1 eltsUnsub
+        c0 <- liftST $ subscribe (fst inner) \kid' -> do
+          stage <- liftST $ Ref.read stageRef
+          case kid', stage of
+            Logic lgc, Listening -> do
+              cid <- liftST $ Ref.read myIds
+              for_ cid (k0 <<< f <<< doLogic lgc interpreter) 
+            Remove, Listening -> do
+              void $ liftST $ Ref.write Closed stageRef
+              idRef <- liftST $ Ref.read myIds
+              for_ idRef \old ->
+                for_ psr.parent \pnt -> k0 $ f
+                  ( disconnectElement interpreter
+                      { id: old, parent: pnt, scope: myScope }
+                  )
+              -- we force after the disconnect element
+              -- because assumedly the forcing has clean-up-y stuff
+              -- so we want to disconnect before we clean up, lest
+              -- we try to disconnect something that has already been deleted
+              k0 $ f $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
+              myu <- liftST $ Ref.read myUnsub
+              liftST myu
+              eltu <- liftST $ Ref.read eltsUnsub
+              liftST eltu
+              void $ liftST $ Ref.modify
+                (Object.delete $ show myUnsubId)
+                cancelInner
+              void $ liftST $ Ref.modify
+                (Object.delete $ show eltsUnsubId)
+                cancelInner
+            _, _ -> pure unit
+        void $ liftST $ Ref.write c0 myUnsub
+        void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0)
+          cancelInner
       void $ Ref.modify (_ *> cancelOuter) urf
 
     pure do
