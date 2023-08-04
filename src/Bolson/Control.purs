@@ -229,7 +229,7 @@ internalPortalSimpleComplex
           idz
         -- now, the elements are simply the evaluation of the closure
 
-        Element realized = flatten flatArgs (closure injectable) psr interpreter
+        realized = flatten flatArgs (closure injectable) psr interpreter
 
       resu <- subscribe (sample (realized psr interpreter) e) kx
       void $ Ref.modify (_ *> resu) urf
