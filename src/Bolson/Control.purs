@@ -174,16 +174,16 @@ internalPortalSimpleComplex
       let
         actualized = mapWithIndex
           ( \ix entity -> toElt entity # \(Element elt) -> elt
-          ( psr
-              { parent = Nothing
-              , scope = scopeF psr.scope
-              , raiseId = \id -> unsafeUpdateMutAr ix
-                  { id, entity: Element' entity }
-                  av
-              }
+              ( psr
+                  { parent = Nothing
+                  , scope = scopeF psr.scope
+                  , raiseId = \id -> unsafeUpdateMutAr ix
+                      { id, entity: Element' entity }
+                      av
+                  }
+              )
+              interpreter
           )
-          interpreter
-      )
       (toArray toBeam)
       acsu <- subscribe (merge actualized) kx
       void $ Ref.modify (_ *> acsu) urf
@@ -227,7 +227,9 @@ internalPortalSimpleComplex
           )
           idz
         -- now, the elements are simply the evaluation of the closure
-        Element realized = toElt (closure (injectable))
+
+        Element realized = flatten flatArgs (closure (injectable)) psr interpreter
+
       resu <- subscribe (sample (realized psr interpreter) e) kx
       void $ Ref.modify (_ *> resu) urf
       -- When we unsubscribe from the portal, we want to delete everything
@@ -350,7 +352,8 @@ internalPortalComplexComplex
           )
           idz
         -- now, the elements are simply the evaluation of the closure
-        Element realized = toElt (closure (injectable))
+        Element realized = flatten flatArgs (closure (injectable)) psr interpreter
+
       resu <- subscribe (sample (realized psr interpreter) e) kx
       void $ Ref.modify (_ *> resu) urf
       -- When we unsubscribe from the portal, we want to delete everything
@@ -651,7 +654,7 @@ flatten
     cancelInner <- liftST $ Ref.new Object.empty
     ugh <- subscribe e0 \f -> do
       fireId1 <- liftST $ ids interpreter
-      k0 $ f (deferPayload (List.Nil) (forcePayload interpreter $ pure fireId1))
+      k0 $ f (deferPayload interpreter List.Nil (forcePayload interpreter $ pure fireId1))
       let
         subscriber
           :: forall m
@@ -677,7 +680,7 @@ flatten
             stageRef <- liftST $ Ref.new Listening
             let fireList = (fireId1 : fireId2 : List.Nil)
             void $ liftST $ Ref.write Listening stageRef
-            Tuple sub (Tuple unsub evt) <- liftST $ flatten
+            let evt = flatten
               flatArgs
               ( psr
                   { scope = myScope
