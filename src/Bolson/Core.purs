@@ -10,7 +10,7 @@ import Data.Tuple (Tuple)
 import FRP.Event (Event)
 
 type HeadElement' interpreter payload =
-  interpreter -> ST ST.Global (Tuple (Array (ST ST.Global payload)) (Tuple (Array (ST ST.Global payload)) (Event payload)))
+  interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array payload) (Event payload)))
 
 type Element' interpreter r payload =
   PSR r -> HeadElement' interpreter payload
