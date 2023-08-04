@@ -4,13 +4,12 @@ import Prelude
 
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Global as ST
-import Data.Bifunctor (bimap)
 import Data.Maybe (Maybe)
 import Data.Tuple (Tuple)
+import FRP.Behavior (Behavior)
 import FRP.Event (Event)
 
-type HeadElement' interpreter payload =
-  interpreter -> ST ST.Global (Tuple (Array payload) (Tuple (Array payload) (Event payload)))
+type HeadElement' interpreter payload = interpreter -> Behavior payload
 
 type Element' interpreter r payload =
   PSR r -> HeadElement' interpreter payload
@@ -22,10 +21,7 @@ data Child (logic :: Type)
   | Logic logic
 
 newtype DynamicChildren logic obj = DynamicChildren
-  ( Tuple
-      (Array (Tuple (Event (Child logic)) (Entity logic obj)))
       (Event (Tuple (Event (Child logic)) (Entity logic obj)))
-  )
 
 newtype FixedChildren logic obj = FixedChildren
   (Array (Entity logic obj))
@@ -50,7 +46,7 @@ data Entity logic obj
 instance Functor (Entity logic) where
   map f = case _ of
     DynamicChildren' (DynamicChildren a) ->
-      DynamicChildren' (DynamicChildren (bimap (map (map (map f))) (map (map (map f))) a))
+      DynamicChildren' (DynamicChildren $ map (map (map f)) a)
     FixedChildren' (FixedChildren a) ->
       FixedChildren' (FixedChildren (map (map f) a))
     Element' a -> Element' (f a)
@@ -63,8 +59,6 @@ fixed a = FixedChildren' (FixedChildren a)
 
 dyn
   :: forall logic obj
-   . Tuple
-       (Array (Tuple (Event (Child logic)) (Entity logic obj)))
-       (Event (Tuple (Event (Child logic)) (Entity logic obj)))
+   . (Event (Tuple (Event (Child logic)) (Entity logic obj)))
   -> Entity logic obj
 dyn a = DynamicChildren' (DynamicChildren a)

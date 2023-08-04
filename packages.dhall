@@ -30,5 +30,5 @@ in  upstream
   , "web-uievents"
       ]
     , repo = "https://github.com/mikesol/purescript-hyrule.git"
-    , version = "fantasy-land"
+    , version = "fantasy-land2"
     }
