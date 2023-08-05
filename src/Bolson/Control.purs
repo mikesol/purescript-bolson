@@ -117,12 +117,12 @@ type PortalSimple logic specialization interpreter obj1 obj2 r payload =
   , toElt :: obj1 payload -> Element interpreter r payload
   }
 
-behaving :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (Event b -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
+behaving :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c. ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> Event c -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
 behaving iii = behavior \e -> makeLemmingEvent \subscribe kx -> do
   urf <- Ref.new (pure unit)
   ugh <- subscribe e \f -> do
-    iii e (f >>> kx) \z -> do
-      acsu <- subscribe z kx
+    iii e (f >>> kx) \fkx z -> do
+      acsu <- subscribe z (fkx kx)
       void $ Ref.modify (_ *> acsu) urf
   pure do
     liftST $ join (Ref.read urf)
@@ -194,7 +194,7 @@ internalPortalSimpleComplex
             e
         )
         (toArray toBeam)
-    subscribe (merge actualized)
+    subscribe identity (merge actualized)
     -- this is the id we'll use for deferred unloading
     let
       asIds
@@ -238,7 +238,7 @@ internalPortalSimpleComplex
 
       realized = flatten flatArgs (closure injectable) psr interpreter
 
-    subscribe (sample realized e)
+    subscribe identity (sample realized e)
     -- When we unsubscribe from the portal, we want to delete everything
     -- with one of the ids we created.
     when (not isGlobal) do
@@ -312,7 +312,7 @@ internalPortalComplexComplex
             _ -> ff (wrapElt entity)
         )
         (toArray toBeam)
-    subscribe (merge actualized)
+    subscribe identity (merge actualized)
     -- this is the id we'll use for deferred unloading
     let
       asIds
@@ -355,7 +355,7 @@ internalPortalComplexComplex
       -- now, the elements are simply the evaluation of the closure
       realized = flatten flatArgs (closure (injectable)) psr interpreter
 
-    subscribe (sample realized e)
+    subscribe identity (sample realized e)
     -- When we unsubscribe from the portal, we want to delete everything
     -- with one of the ids we created.
     when (not isGlobal) do
@@ -426,7 +426,7 @@ internalPortalComplexSimple
             _ -> ff (wrapElt entity)
         )
         (toArray toBeam)
-    subscribe (merge actualized)
+    subscribe identity (merge actualized)
     -- this is the id we'll use for deferred unloading
     let
       asIds
@@ -468,7 +468,7 @@ internalPortalComplexSimple
         idz
       -- now, the elements are simply the evaluation of the closure
       Element realized = toEltO2 (closure (injectable))
-    subscribe (sample (realized psr interpreter) e)
+    subscribe identity (sample (realized psr interpreter) e)
     -- When we unsubscribe from the portal, we want to delete everything
     -- with one of the ids we created.
     when (not isGlobal) do
