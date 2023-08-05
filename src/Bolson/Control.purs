@@ -274,95 +274,93 @@ internalPortalComplexComplex
   closure = Element' $ fromEltO2 $ Element go
   where
   go psr interpreter = behaving \e kx subscribe -> do
-      -- we initialize a mutable array with empty ids and empty elements
-      -- for each element in the portal vector
-      av <- mutAr
-        ( toArray toBeam $>
-            { id: ""
-            , entity: Element'
-                (fromEltO1 (Element \_ _ -> behavior \_ -> empty))
-            }
-        )
-      -- We intercept all of the elements in the portal vector
-      -- and turn them into instructions and events.
-      --
-      -- This is very much like flatten on its simplest branch.
-      --
-      -- Crucially, when an id is raised, we update mutAr
-      -- with the entity so we know what things can be beamed around.
-      --
-      -- We'll need this later when we actually do the beaming.
-      --
-      -- We also give the framework the option to wrap the element
-      -- so that we are dealing with a singleton (Element'), otherwise it gets too thorny.
-      let
-        actualized = mapWithIndex
-          ( \ix -> Lazy.fix \ff entity -> case entity of
-              Element' beamable -> toElt beamable # \(Element elt) -> sample
-                ( elt
-                    ( psr
-                        { parent = Nothing
-                        , scope = scopeF psr.scope
-                        , raiseId = \id -> unsafeUpdateMutAr ix { id, entity } av
-                        }
-                    )
-                    interpreter
-                )
-                e
-              _ -> ff (wrapElt entity)
-          )
-          (toArray toBeam)
-      acsu <- subscribe (merge actualized) kx
-      void $ Ref.modify (_ *> acsu) urf
-      -- this is the id we'll use for deferred unloading
-      let
-        asIds
-          :: Array { id :: String, entity :: Entity logic (obj1 payload) }
-          -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
-        asIds = unsafeCoerce
-      -- now, when we read the ids, we will have all of the ids of the "beamable" elements in the vector
-      -- this is because the left-bind above that produces actualized' triggers all of the `raiseId` in the elements
-      idz <- asIds <$> (readAr av)
-      -- here's the bait and switch: instead of injecting the beamables into the closure,
-      -- we inject completely empty elements
-      -- they have no moving parts, so it's an empty event
-      -- the only thing they do is signal that they're
-      -- in fact from the portal (the raiseId)
-      -- and provide a side-effect to run immediately upon subscription, meaning the give-new-parent
-      let
-        injectable = map
-          ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
-              \psr2 itp -> behaving \_ kxkx _ -> do
-                liftST $ psr2.raiseId id
-                for_
-                  ( compact
-                      [ psr2.parent <#> \pt ->
-                          ( giveNewParent itp
-                              ( RB.build
-                                  ( RB.insert (Proxy :: _ "id") id >>>
-                                      RB.modify (Proxy :: _ "parent")
-                                        (const pt)
-                                  )
-                                  psr2
-                              )
-                              entity
-                              specialization
-                          )
-                      ]
+    -- we initialize a mutable array with empty ids and empty elements
+    -- for each element in the portal vector
+    av <- mutAr
+      ( toArray toBeam $>
+          { id: ""
+          , entity: Element'
+              (fromEltO1 (Element \_ _ -> behavior \_ -> empty))
+          }
+      )
+    -- We intercept all of the elements in the portal vector
+    -- and turn them into instructions and events.
+    --
+    -- This is very much like flatten on its simplest branch.
+    --
+    -- Crucially, when an id is raised, we update mutAr
+    -- with the entity so we know what things can be beamed around.
+    --
+    -- We'll need this later when we actually do the beaming.
+    --
+    -- We also give the framework the option to wrap the element
+    -- so that we are dealing with a singleton (Element'), otherwise it gets too thorny.
+    let
+      actualized = mapWithIndex
+        ( \ix -> Lazy.fix \ff entity -> case entity of
+            Element' beamable -> toElt beamable # \(Element elt) -> sample
+              ( elt
+                  ( psr
+                      { parent = Nothing
+                      , scope = scopeF psr.scope
+                      , raiseId = \id -> unsafeUpdateMutAr ix { id, entity } av
+                      }
                   )
-                  kxkx
-          )
-          idz
-        -- now, the elements are simply the evaluation of the closure
-        realized = flatten flatArgs (closure (injectable)) psr interpreter
+                  interpreter
+              )
+              e
+            _ -> ff (wrapElt entity)
+        )
+        (toArray toBeam)
+    subscribe (merge actualized)
+    -- this is the id we'll use for deferred unloading
+    let
+      asIds
+        :: Array { id :: String, entity :: Entity logic (obj1 payload) }
+        -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
+      asIds = unsafeCoerce
+    -- now, when we read the ids, we will have all of the ids of the "beamable" elements in the vector
+    -- this is because the left-bind above that produces actualized' triggers all of the `raiseId` in the elements
+    idz <- asIds <$> (readAr av)
+    -- here's the bait and switch: instead of injecting the beamables into the closure,
+    -- we inject completely empty elements
+    -- they have no moving parts, so it's an empty event
+    -- the only thing they do is signal that they're
+    -- in fact from the portal (the raiseId)
+    -- and provide a side-effect to run immediately upon subscription, meaning the give-new-parent
+    let
+      injectable = map
+        ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
+            \psr2 itp -> behaving \_ kxkx _ -> do
+              liftST $ psr2.raiseId id
+              for_
+                ( compact
+                    [ psr2.parent <#> \pt ->
+                        ( giveNewParent itp
+                            ( RB.build
+                                ( RB.insert (Proxy :: _ "id") id >>>
+                                    RB.modify (Proxy :: _ "parent")
+                                      (const pt)
+                                )
+                                psr2
+                            )
+                            entity
+                            specialization
+                        )
+                    ]
+                )
+                kxkx
+        )
+        idz
+      -- now, the elements are simply the evaluation of the closure
+      realized = flatten flatArgs (closure (injectable)) psr interpreter
 
-      resu <- subscribe (sample realized e) kx
-      void $ Ref.modify (_ *> resu) urf
-      -- When we unsubscribe from the portal, we want to delete everything
-      -- with one of the ids we created.
-      when (not isGlobal) do
-        for_ (toArray idz) \{ id } -> do
-          kx (f (deleteFromCache interpreter { id }))
+    subscribe (sample realized e)
+    -- When we unsubscribe from the portal, we want to delete everything
+    -- with one of the ids we created.
+    when (not isGlobal) do
+      for_ (toArray idz) \{ id } -> do
+        kx (deleteFromCache interpreter { id })
 
 internalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -390,93 +388,92 @@ internalPortalComplexSimple
   closure = fromEltO2 $ Element go
   where
   go psr interpreter = behaving \e kx subscribe -> do
-      -- we initialize a mutable array with empty ids and empty elements
-      -- for each element in the portal vector
-      av <- mutAr
-        ( toArray toBeam $>
-            { id: ""
-            , entity: Element'
-                (fromEltO1 (Element \_ _ -> behavior \_ -> empty))
-            }
-        )
-      -- We intercept all of the elements in the portal vector
-      -- and turn them into instructions and events.
-      --
-      -- This is very much like flatten on its simplest branch.
-      --
-      -- Crucially, when an id is raised, we update mutAr
-      -- with the entity so we know what things can be beamed around.
-      --
-      -- We'll need this later when we actually do the beaming.
-      --
-      -- We also give the framework the option to wrap the element
-      -- so that we are dealing with a singleton (Element'), otherwise it gets too thorny.
-      let
-        actualized = mapWithIndex
-          ( \ix -> Lazy.fix \ff entity -> case entity of
-              Element' beamable -> toEltO1 beamable # \(Element elt) -> sample
-                ( elt
-                    ( psr
-                        { parent = Nothing
-                        , scope = scopeF psr.scope
-                        , raiseId = \id -> unsafeUpdateMutAr ix { id, entity } av
-                        }
-                    )
-                    interpreter
-                )
-                e
-              _ -> ff (wrapElt entity)
-          )
-          (toArray toBeam)
-      subscribe (merge actualized)
-      -- this is the id we'll use for deferred unloading
-      let
-        asIds
-          :: Array { id :: String, entity :: Entity logic (obj1 payload) }
-          -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
-        asIds = unsafeCoerce
-      -- now, when we read the ids, we will have all of the ids of the "beamable" elements in the vector
-      -- this is because the left-bind above that produces actualized' triggers all of the `raiseId` in the elements
-      idz <- asIds <$> (readAr av)
-      -- here's the bait and switch: instead of injecting the beamables into the closure,
-      -- we inject completely empty elements
-      -- they have no moving parts, so it's an empty event
-      -- the only thing they do is signal that they're
-      -- in fact from the portal (the raiseId)
-      -- and provide a side-effect to run immediately upon subscription, meaning the give-new-parent
-      let
-        injectable = map
-          ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
-              \psr2 itp -> behavior \ne -> makeLemmingEvent \sub2 kk -> sub2 ne \ff -> do
-                liftST $ psr2.raiseId id
-                for_
-                  ( compact
-                      [ psr2.parent <#> \pt ->
-                          ( giveNewParent itp
-                              ( RB.build
-                                  ( RB.insert (Proxy :: _ "id") id >>>
-                                      RB.modify (Proxy :: _ "parent")
-                                        (const pt)
-                                  )
-                                  psr2
-                              )
-                              entity
-                              specialization
-                          )
-                      ]
+    -- we initialize a mutable array with empty ids and empty elements
+    -- for each element in the portal vector
+    av <- mutAr
+      ( toArray toBeam $>
+          { id: ""
+          , entity: Element'
+              (fromEltO1 (Element \_ _ -> behavior \_ -> empty))
+          }
+      )
+    -- We intercept all of the elements in the portal vector
+    -- and turn them into instructions and events.
+    --
+    -- This is very much like flatten on its simplest branch.
+    --
+    -- Crucially, when an id is raised, we update mutAr
+    -- with the entity so we know what things can be beamed around.
+    --
+    -- We'll need this later when we actually do the beaming.
+    --
+    -- We also give the framework the option to wrap the element
+    -- so that we are dealing with a singleton (Element'), otherwise it gets too thorny.
+    let
+      actualized = mapWithIndex
+        ( \ix -> Lazy.fix \ff entity -> case entity of
+            Element' beamable -> toEltO1 beamable # \(Element elt) -> sample
+              ( elt
+                  ( psr
+                      { parent = Nothing
+                      , scope = scopeF psr.scope
+                      , raiseId = \id -> unsafeUpdateMutAr ix { id, entity } av
+                      }
                   )
-                  (kk <<< ff)
-          )
-          idz
-        -- now, the elements are simply the evaluation of the closure
-        Element realized = toEltO2 (closure (injectable))
-      subscribe (sample (realized psr interpreter) e)
-      -- When we unsubscribe from the portal, we want to delete everything
-      -- with one of the ids we created.
-      when (not isGlobal) do
-        for_ (toArray idz) \{ id } -> do
-          kx (deleteFromCache interpreter { id })
-
+                  interpreter
+              )
+              e
+            _ -> ff (wrapElt entity)
+        )
+        (toArray toBeam)
+    subscribe (merge actualized)
+    -- this is the id we'll use for deferred unloading
+    let
+      asIds
+        :: Array { id :: String, entity :: Entity logic (obj1 payload) }
+        -> Vect n { id :: String, entity :: Entity logic (obj1 payload) }
+      asIds = unsafeCoerce
+    -- now, when we read the ids, we will have all of the ids of the "beamable" elements in the vector
+    -- this is because the left-bind above that produces actualized' triggers all of the `raiseId` in the elements
+    idz <- asIds <$> (readAr av)
+    -- here's the bait and switch: instead of injecting the beamables into the closure,
+    -- we inject completely empty elements
+    -- they have no moving parts, so it's an empty event
+    -- the only thing they do is signal that they're
+    -- in fact from the portal (the raiseId)
+    -- and provide a side-effect to run immediately upon subscription, meaning the give-new-parent
+    let
+      injectable = map
+        ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
+            \psr2 itp -> behavior \ne -> makeLemmingEvent \sub2 kk -> sub2 ne \ff -> do
+              liftST $ psr2.raiseId id
+              for_
+                ( compact
+                    [ psr2.parent <#> \pt ->
+                        ( giveNewParent itp
+                            ( RB.build
+                                ( RB.insert (Proxy :: _ "id") id >>>
+                                    RB.modify (Proxy :: _ "parent")
+                                      (const pt)
+                                )
+                                psr2
+                            )
+                            entity
+                            specialization
+                        )
+                    ]
+                )
+                (kk <<< ff)
+        )
+        idz
+      -- now, the elements are simply the evaluation of the closure
+      Element realized = toEltO2 (closure (injectable))
+    subscribe (sample (realized psr interpreter) e)
+    -- When we unsubscribe from the portal, we want to delete everything
+    -- with one of the ids we created.
+    when (not isGlobal) do
+      for_ (toArray idz) \{ id } -> do
+        kx (deleteFromCache interpreter { id })
 
 globalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -643,9 +640,11 @@ flatten
     merge $ map (\ex -> sample (flatten flatArgs ex psr interpreter) e) fc
   Element' e -> element (toElt e)
   DynamicChildren' (DynamicChildren children) -> behavior \e0 -> makeLemmingEvent \subscribe k0 -> do
-      cancelInner <- liftST $ Ref.new Object.empty
+    urf <- Ref.new (pure unit)
+    cancelInner <- liftST $ Ref.new Object.empty
+    ugh <- subscribe e0 \f -> do
       fireId1 <- liftST $ ids interpreter
-      kx (deferPayload interpreter List.Nil (forcePayload interpreter $ pure fireId1))
+      k0 $ f (deferPayload interpreter List.Nil (forcePayload interpreter $ pure fireId1))
       cancelOuter <- subscribe children \inner -> do
         fireId2 <- liftST $ ids interpreter
         -- holds the previous id
@@ -679,7 +678,7 @@ flatten
             (once children $> identity)
         c1 <- liftST $ subscribe
           (map (redecorateDeferredPayload interpreter fireList) evt)
-          kx
+          (k0 <<< f)
         void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
           cancelInner
         void $ liftST $ Ref.write c1 eltsUnsub
@@ -688,12 +687,12 @@ flatten
           case kid', stage of
             Logic lgc, Listening -> do
               cid <- liftST $ Ref.read myIds
-              for_ cid (kx <<< doLogic lgc interpreter)
+              for_ cid (k0 <<< f <<< doLogic lgc interpreter)
             Remove, Listening -> do
               void $ liftST $ Ref.write Closed stageRef
               idRef <- liftST $ Ref.read myIds
               for_ idRef \old ->
-                for_ psr.parent \pnt -> kx
+                for_ psr.parent \pnt -> k0 $ f
                   ( disconnectElement interpreter
                       { id: old, parent: pnt, scope: myScope }
                   )
@@ -701,7 +700,7 @@ flatten
               -- because assumedly the forcing has clean-up-y stuff
               -- so we want to disconnect before we clean up, lest
               -- we try to disconnect something that has already been deleted
-              kx $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
+              k0 $ f $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
               myu <- liftST $ Ref.read myUnsub
               liftST myu
               eltu <- liftST $ Ref.read eltsUnsub
@@ -716,8 +715,11 @@ flatten
         void $ liftST $ Ref.write c0 myUnsub
         void $ liftST $ Ref.modify (Object.insert (show myUnsubId) c0)
           cancelInner
+      void $ Ref.modify (_ *> cancelOuter) urf
 
     pure do
+      liftST $ join (Ref.read urf)
+      ugh
       (Ref.read cancelInner) >>= foldl (*>) (pure unit)
 
   where
