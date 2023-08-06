@@ -62,6 +62,7 @@ type Portal logic specialization interpreter obj1 obj2 r payload =
       interpreter
       -> { id :: String
          , parent :: String
+         , deferralPath :: List.List Int
          , scope :: Scope
          , raiseId :: String -> ST.ST Region.Global Unit
          | r
@@ -83,6 +84,7 @@ type PortalComplex logic specialization interpreter obj1 obj2 r payload =
       interpreter
       -> { id :: String
          , parent :: String
+         , deferralPath :: List.List Int
          , scope :: Scope
          , raiseId :: String -> ST.ST Region.Global Unit
          | r
@@ -105,6 +107,7 @@ type PortalSimple logic specialization interpreter obj1 obj2 r payload =
       interpreter
       -> { id :: String
          , parent :: String
+         , deferralPath :: List.List Int
          , scope :: Scope
          , raiseId :: String -> ST.ST Region.Global Unit
          | r
@@ -118,11 +121,11 @@ type PortalSimple logic specialization interpreter obj1 obj2 r payload =
   , toElt :: obj1 payload -> Element interpreter r payload
   }
 
-behaving' :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c. ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> Event c -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
+behaving' :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
 behaving' iii = behavior \e -> makeLemmingEvent \subscribe kx -> do
   urf <- Ref.new (pure unit)
   ugh <- subscribe e \f -> do
-    iii e (f >>> kx) \fkx z -> do
+    iii e (f >>> kx) \z fkx -> do
       acsu <- subscribe z (fkx kx)
       void $ Ref.modify (_ *> acsu) urf
   pure do
@@ -130,7 +133,7 @@ behaving' iii = behavior \e -> makeLemmingEvent \subscribe kx -> do
     ugh
 
 behaving :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (Event b -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
-behaving iii = behaving' \a b c -> iii a b (c identity)
+behaving iii = behaving' \a b c -> iii a b (flip c identity)
 
 internalPortalSimpleComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -615,8 +618,6 @@ type Flatten logic interpreter obj r payload =
       -> payload
   , deferPayload :: interpreter -> List.List Int -> payload -> payload
   , forcePayload :: interpreter -> List.List Int -> payload
-  , redecorateDeferredPayload ::
-      interpreter -> List.List Int -> payload -> payload
   , toElt :: obj payload -> Element interpreter r payload
   }
 
@@ -634,7 +635,6 @@ flatten
     , deferPayload
     , forcePayload
     , disconnectElement
-    , redecorateDeferredPayload
     , toElt
     }
   etty
@@ -649,8 +649,10 @@ flatten
     urf <- Ref.new (pure unit)
     cancelInner <- liftST $ Ref.new Object.empty
     ugh <- subscribe e0 \f -> do
+      -- fireId1 is only needed for global clean up
+      -- if we clean the dyn and removes haven't been called, this will pick it up
       fireId1 <- liftST $ ids interpreter
-      k0 $ f (deferPayload interpreter List.Nil (forcePayload interpreter $ pure fireId1))
+      k0 $ f (deferPayload interpreter psr.deferralPath (forcePayload interpreter $  List.snoc psr.deferralPath fireId1))
       cancelOuter <- subscribe children \inner -> do
         fireId2 <- liftST $ ids interpreter
         -- holds the previous id
@@ -665,7 +667,6 @@ flatten
               Local l -> pure l <> pure "!" <> show <$> ids interpreter
           )
         stageRef <- liftST $ Ref.new Listening
-        let fireList = (fireId1 : fireId2 : List.Nil)
         void $ liftST $ Ref.write Listening stageRef
         -- for the inner dyn, we pass it a singleton via `once`
         let
@@ -675,6 +676,7 @@ flatten
                 (snd inner)
                 ( psr
                     { scope = myScope
+                    , deferralPath = psr.deferralPath <> (fireId1 : fireId2 : List.Nil)
                     , raiseId = \id -> do
                         void $ Ref.modify (append [ id ]) myIds
                     }
@@ -683,7 +685,7 @@ flatten
             )
             (once children $> identity)
         c1 <- liftST $ subscribe
-          (map (redecorateDeferredPayload interpreter fireList) evt)
+          evt
           (k0 <<< f)
         void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
           cancelInner
@@ -706,7 +708,7 @@ flatten
               -- because assumedly the forcing has clean-up-y stuff
               -- so we want to disconnect before we clean up, lest
               -- we try to disconnect something that has already been deleted
-              k0 $ f $ forcePayload interpreter (fireId1 : fireId2 : List.Nil)
+              k0 $ f $ forcePayload interpreter $ psr.deferralPath <> (fireId1 : fireId2 : List.Nil)
               myu <- liftST $ Ref.read myUnsub
               liftST myu
               eltu <- liftST $ Ref.read eltsUnsub

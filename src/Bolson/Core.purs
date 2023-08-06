@@ -4,6 +4,7 @@ import Prelude
 
 import Control.Monad.ST (ST)
 import Control.Monad.ST.Global as ST
+import Data.List as List
 import Data.Maybe (Maybe)
 import Data.Tuple (Tuple)
 import FRP.Behavior (Behavior)
@@ -35,6 +36,7 @@ type PSR r =
   { parent :: Maybe String
   , scope :: Scope
   , raiseId :: String -> ST ST.Global Unit
+  , deferralPath :: List.List Int
   | r
   }
 
