@@ -9,6 +9,7 @@ module Bolson.Control
   , fixComplexComplex
   , switcher
   , behaving
+  , behaving_
   , behaving'
   , Flatten
   , Portal
@@ -121,19 +122,22 @@ type PortalSimple logic specialization interpreter obj1 obj2 r payload =
   , toElt :: obj1 payload -> Element interpreter r payload
   }
 
-behaving' :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
+behaving' :: forall a. (forall b. (a -> b) -> Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
 behaving' iii = behavior \e -> makeLemmingEvent \subscribe kx -> do
   urf <- Ref.new (pure unit)
   ugh <- subscribe e \f -> do
-    iii e (f >>> kx) \z fkx -> do
+    iii f e (f >>> kx) \z fkx -> do
       acsu <- subscribe z (fkx kx)
       void $ Ref.modify (_ *> acsu) urf
   pure do
     liftST $ join (Ref.read urf)
     ugh
 
+behaving_ :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
+behaving_ iii = behaving' \_ -> iii
+
 behaving :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (Event b -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
-behaving iii = behaving' \a b c -> iii a b (flip c identity)
+behaving iii = behaving_ \a b c -> iii a b (flip c identity)
 
 internalPortalSimpleComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
