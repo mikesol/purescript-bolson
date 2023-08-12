@@ -692,7 +692,7 @@ flatten
         void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
           cancelInner
         void $ liftST $ Ref.write c1 eltsUnsub
-        c0 <- liftST $ subscribe (sample_ (fst inner) memoKids.event) \kid' -> do
+        c0 <- liftST $ subscribe (sample_ (fst inner) (once memoKids.event)) \kid' -> do
           stage <- liftST $ Ref.read stageRef
           case kid', stage of
             Logic lgc, Listening -> do
