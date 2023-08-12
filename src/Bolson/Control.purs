@@ -35,9 +35,9 @@ import Data.List ((:))
 import Data.List as List
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst, snd)
-import FRP.Event (Event, makeLemmingEvent, merge)
+import FRP.Event (Event, makeLemmingEvent, memoize, merge)
 import FRP.Event.Class (once)
-import FRP.Poll (Poll, poll, sample)
+import FRP.Poll (Poll, poll, sample, sample_)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -120,7 +120,7 @@ type PortalSimple logic specialization interpreter obj1 obj2 r payload =
   , toElt :: obj1 payload -> Element interpreter r payload
   }
 
-behaving' :: forall a. (forall b. (a -> b) -> Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Poll a
+behaving' :: forall a. (forall b. (a -> b) -> Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c. Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Poll a
 behaving' iii = poll \e -> makeLemmingEvent \subscribe kx -> do
   urf <- Ref.new (pure unit)
   ugh <- subscribe e \f -> do
@@ -131,7 +131,7 @@ behaving' iii = poll \e -> makeLemmingEvent \subscribe kx -> do
     liftST $ join (Ref.read urf)
     ugh
 
-behaving_ :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Poll a
+behaving_ :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c. Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Poll a
 behaving_ iii = behaving' \_ -> iii
 
 behaving :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (Event b -> ST Region.Global Unit) -> ST Region.Global Unit) -> Poll a
@@ -654,8 +654,10 @@ flatten
       -- fireId1 is only needed for global clean up
       -- if we clean the dyn and removes haven't been called, this will pick it up
       fireId1 <- liftST $ ids interpreter
-      k0 $ f (deferPayload interpreter psr.deferralPath (forcePayload interpreter $  List.snoc psr.deferralPath fireId1))
-      cancelOuter <- subscribe children \inner -> do
+      k0 $ f (deferPayload interpreter psr.deferralPath (forcePayload interpreter $ List.snoc psr.deferralPath fireId1))
+      memoKids <- memoize (sample_ children e0)
+      void $ Ref.modify (_ *> memoKids.unsubscribe) urf
+      cancelOuter <- subscribe memoKids.event \inner -> do
         fireId2 <- liftST $ ids interpreter
         -- holds the previous id
         myUnsubId <- liftST $ ids interpreter
@@ -685,14 +687,12 @@ flatten
                 )
                 interpreter
             )
-            (once children $> identity)
-        c1 <- liftST $ subscribe
-          evt
-          (k0 <<< f)
+            (once memoKids.event $> identity)
+        c1 <- liftST $ subscribe evt (k0 <<< f)
         void $ liftST $ Ref.modify (Object.insert (show eltsUnsubId) c1)
           cancelInner
         void $ liftST $ Ref.write c1 eltsUnsub
-        c0 <- liftST $ subscribe (fst inner) \kid' -> do
+        c0 <- liftST $ subscribe (sample_ (fst inner) memoKids.event) \kid' -> do
           stage <- liftST $ Ref.read stageRef
           case kid', stage of
             Logic lgc, Listening -> do

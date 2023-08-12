@@ -8,7 +8,6 @@ import Data.List as List
 import Data.Maybe (Maybe)
 import Data.Tuple (Tuple)
 import FRP.Poll (Poll)
-import FRP.Event (Event)
 
 type HeadElement' interpreter payload = interpreter -> Poll payload
 
@@ -22,7 +21,7 @@ data Child (logic :: Type)
   | Logic logic
 
 newtype DynamicChildren logic obj = DynamicChildren
-      (Event (Tuple (Event (Child logic)) (Entity logic obj)))
+      (Poll (Tuple (Poll (Child logic)) (Entity logic obj)))
 
 newtype FixedChildren logic obj = FixedChildren
   (Array (Entity logic obj))
@@ -61,6 +60,6 @@ fixed a = FixedChildren' (FixedChildren a)
 
 dyn
   :: forall logic obj
-   . (Event (Tuple (Event (Child logic)) (Entity logic obj)))
+   . (Poll (Tuple (Poll (Child logic)) (Entity logic obj)))
   -> Entity logic obj
 dyn a = DynamicChildren' (DynamicChildren a)
