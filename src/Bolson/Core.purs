@@ -7,10 +7,10 @@ import Control.Monad.ST.Global as ST
 import Data.List as List
 import Data.Maybe (Maybe)
 import Data.Tuple (Tuple)
-import FRP.Behavior (Behavior)
+import FRP.Poll (Poll)
 import FRP.Event (Event)
 
-type HeadElement' interpreter payload = interpreter -> Behavior payload
+type HeadElement' interpreter payload = interpreter -> Poll payload
 
 type Element' interpreter r payload =
   PSR r -> HeadElement' interpreter payload

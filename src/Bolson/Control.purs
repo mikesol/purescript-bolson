@@ -7,7 +7,6 @@ module Bolson.Control
   , portalSimpleComplex
   , portalComplexSimple
   , fixComplexComplex
-  , switcher
   , behaving
   , behaving_
   , behaving'
@@ -29,17 +28,16 @@ import Control.Monad.ST.Internal as Ref
 import Control.Monad.ST.Internal as ST
 import Control.Plus (empty)
 import Data.FastVect.FastVect (toArray, Vect)
-import Data.Filterable (compact, filter)
+import Data.Filterable (compact)
 import Data.Foldable (foldl, for_)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.List ((:))
 import Data.List as List
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..), fst, snd)
-import Data.Tuple.Nested (type (/\), (/\))
-import FRP.Behavior (Behavior, behavior, sample)
-import FRP.Event (Event, keepLatest, makeLemmingEvent, mapAccum, memoize, merge)
+import Data.Tuple (fst, snd)
+import FRP.Event (Event, makeLemmingEvent, merge)
 import FRP.Event.Class (once)
+import FRP.Poll (Poll, poll, sample)
 import Foreign.Object as Object
 import Prim.Int (class Compare)
 import Prim.Ordering (GT)
@@ -122,8 +120,8 @@ type PortalSimple logic specialization interpreter obj1 obj2 r payload =
   , toElt :: obj1 payload -> Element interpreter r payload
   }
 
-behaving' :: forall a. (forall b. (a -> b) -> Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
-behaving' iii = behavior \e -> makeLemmingEvent \subscribe kx -> do
+behaving' :: forall a. (forall b. (a -> b) -> Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Poll a
+behaving' iii = poll \e -> makeLemmingEvent \subscribe kx -> do
   urf <- Ref.new (pure unit)
   ugh <- subscribe e \f -> do
     iii f e (f >>> kx) \z fkx -> do
@@ -133,10 +131,10 @@ behaving' iii = behavior \e -> makeLemmingEvent \subscribe kx -> do
     liftST $ join (Ref.read urf)
     ugh
 
-behaving_ :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
+behaving_ :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (forall c.  Event c -> ((b -> ST Region.Global Unit) -> c -> ST Region.Global Unit) -> ST Region.Global Unit) -> ST Region.Global Unit) -> Poll a
 behaving_ iii = behaving' \_ -> iii
 
-behaving :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (Event b -> ST Region.Global Unit) -> ST Region.Global Unit) -> Behavior a
+behaving :: forall a. (forall b. Event (a -> b) -> (a -> ST Region.Global Unit) -> (Event b -> ST Region.Global Unit) -> ST Region.Global Unit) -> Poll a
 behaving iii = behaving_ \a b c -> iii a b (flip c identity)
 
 internalPortalSimpleComplex
@@ -173,7 +171,7 @@ internalPortalSimpleComplex
       ( toArray toBeam $>
           { id: ""
           , entity: Element'
-              (fromEltO1 (Element \_ _ -> behavior \_ -> empty))
+              (fromEltO1 (Element \_ _ -> poll \_ -> empty))
           }
       )
     -- We intercept all of the elements in the portal vector
@@ -291,7 +289,7 @@ internalPortalComplexComplex
       ( toArray toBeam $>
           { id: ""
           , entity: Element'
-              (fromEltO1 (Element \_ _ -> behavior \_ -> empty))
+              (fromEltO1 (Element \_ _ -> poll \_ -> empty))
           }
       )
     -- We intercept all of the elements in the portal vector
@@ -405,7 +403,7 @@ internalPortalComplexSimple
       ( toArray toBeam $>
           { id: ""
           , entity: Element'
-              (fromEltO1 (Element \_ _ -> behavior \_ -> empty))
+              (fromEltO1 (Element \_ _ -> poll \_ -> empty))
           }
       )
     -- We intercept all of the elements in the portal vector
@@ -456,7 +454,7 @@ internalPortalComplexSimple
     let
       injectable = map
         ( \{ id, entity } specialization -> Element' $ fromEltO1 $ Element
-            \psr2 itp -> behavior \ne -> makeLemmingEvent \sub2 kk -> sub2 ne \ff -> do
+            \psr2 itp -> poll \ne -> makeLemmingEvent \sub2 kk -> sub2 ne \ff -> do
               liftST $ psr2.raiseId id
               for_
                 ( compact
@@ -631,7 +629,7 @@ flatten
   -> Entity logic (obj payload)
   -> PSR r
   -> interpreter
-  -> Behavior payload
+  -> Poll payload
 flatten
   flatArgs@
     { doLogic
@@ -644,12 +642,12 @@ flatten
   etty
   psr
   interpreter = case etty of
-  FixedChildren' (FixedChildren fc) -> behavior \e ->
+  FixedChildren' (FixedChildren fc) -> poll \e ->
     merge $ map (\ex -> sample (flatten flatArgs ex psr interpreter) e) fc
   Element' e -> element (toElt e)
   -- todo: cancelInner is preventing this from using `behaving`
   -- is there a way to fix that?
-  DynamicChildren' (DynamicChildren children) -> behavior \e0 -> makeLemmingEvent \subscribe k0 -> do
+  DynamicChildren' (DynamicChildren children) -> poll \e0 -> makeLemmingEvent \subscribe k0 -> do
     urf <- Ref.new (pure unit)
     cancelInner <- liftST $ Ref.new Object.empty
     ugh <- subscribe e0 \f -> do
@@ -754,12 +752,12 @@ fixComplexComplex
   { connectToParent, fromElt }
   fx = Element' $ fromElt $ Element go
   where
-  go i interpret = behavior \ez -> makeLemmingEvent \subex kz -> do
+  go i interpret = poll \ez -> makeLemmingEvent \subex kz -> do
     urf <- Ref.new (pure unit)
     uu <- subex ez \_ -> do
       av <- Ref.new Nothing
       let
-        nn = fx $ Element' $ fromElt $ Element \ii _ -> behavior \e -> makeLemmingEvent \subscribe k -> subscribe e \f -> do
+        nn = fx $ Element' $ fromElt $ Element \ii _ -> poll \e -> makeLemmingEvent \subscribe k -> subscribe e \f -> do
           av' <- Ref.read av
           case av', ii.parent of
             Just r, Just p'
@@ -786,22 +784,3 @@ fixComplexComplex
     pure do
       join (Ref.read urf)
       uu
-
-switcher
-  :: forall i logic obj
-   . (i -> Entity logic obj)
-  -> Event i
-  -> Entity logic obj
-switcher f event = DynamicChildren' $ DynamicChildren $ keepLatest
-  $ memoize (counter event) \cenv -> map
-      ( \(p /\ n) -> Tuple
-          ((const Remove) <$> filter (eq (n + 1) <<< snd) (counter event))
-          (f p)
-
-      )
-      cenv
-  where
-  counter :: forall a. Event a → Event (a /\ Int)
-  counter ev = mapAccum fn 0 ev
-    where
-    fn a b = (a + 1) /\ (b /\ a)
