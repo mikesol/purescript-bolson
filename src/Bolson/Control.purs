@@ -36,7 +36,7 @@ import Data.List ((:))
 import Data.List as List
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst, snd)
-import FRP.Event (Event, makeLemmingEvent, memoize, merge)
+import FRP.Event (Event, createPure, makeLemmingEvent, merge)
 import FRP.Event.Class (once)
 import FRP.Poll (Poll, poll, sample, sample_)
 import Foreign.Object as Object
@@ -717,7 +717,9 @@ flatten
           ( deferPayload interpreter psr.deferralPath
               (forcePayload interpreter $ List.snoc psr.deferralPath fireId1)
           )
-        memoKids <- memoize (sample_ children e0)
+        eepp <- createPure
+        unsubscribe <- subscribe (sample_ children e0) eepp.push
+        let memoKids = { unsubscribe, event: eepp.event }
         void $ Ref.modify (_ *> memoKids.unsubscribe) urf
         cancelOuter <- subscribe memoKids.event \inner -> do
           fireId2 <- liftST $ ids interpreter
