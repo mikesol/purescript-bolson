@@ -95,6 +95,7 @@ type PortalComplex logic specialization interpreter obj1 obj2 r payload =
   , wrapElt ::
       Entity logic (obj1 payload)
       -> Entity logic (obj1 payload)
+  , deferPayload :: interpreter -> List.List Int -> payload -> payload
   , deleteFromCache :: interpreter -> { id :: String } -> payload
   , fromEltO1 :: Element interpreter r payload -> obj1 payload
   , fromEltO2 :: Element interpreter r payload -> obj2 payload
@@ -259,7 +260,7 @@ internalPortalSimpleComplex
         -- with one of the ids we created.
         when (not isGlobal) do
           for_ (toArray idz) \{ id } -> do
-            kx (deleteFromCache interpreter { id })
+            kx (flatArgs.deferPayload interpreter psr.deferralPath (deleteFromCache interpreter { id }))
 
     -- We intercept all of the elements in the portal vector
     -- and turn them into instructions and events.
@@ -382,7 +383,7 @@ internalPortalComplexComplex
         -- with one of the ids we created.
         when (not isGlobal) do
           for_ (toArray idz) \{ id } -> do
-            kx (deleteFromCache interpreter { id })
+            kx (flatArgs.deferPayload interpreter psr.deferralPath (deleteFromCache interpreter { id }))
     -- We intercept all of the elements in the portal vector
     -- and turn them into instructions and events.
     --
@@ -434,6 +435,7 @@ internalPortalComplexSimple
   scopeF
   { giveNewParent
   , deleteFromCache
+  , deferPayload
   , fromEltO1
   , fromEltO2
   , wrapElt
@@ -504,7 +506,7 @@ internalPortalComplexSimple
         -- with one of the ids we created.
         when (not isGlobal) do
           for_ (toArray idz) \{ id } -> do
-            kx (deleteFromCache interpreter { id })
+            kx (deferPayload interpreter psr.deferralPath (deleteFromCache interpreter { id }))
     -- We intercept all of the elements in the portal vector
     -- and turn them into instructions and events.
     --
