@@ -25,7 +25,7 @@ In all of these cases, we need a way to reference _and_ mutate the object. Boslo
 
 Bolson's main units of work are the `Element` and the `Entity`. In all of the frameworks that build on top of it, you'll either use these directly or create newtype wrappers around both `Element` and `Entity`.
 
-> By using `Element` and `Entity`, you get certain powerful memory management behaviors "for free", which allows you to focus more on framework building and less on questions like "did I actually delete that shader?" or "I've removed my `div` from its parent, but is it still receiving events?".
+> By using `Element` and `Entity`, you get certain powerful memory management polls "for free", which allows you to focus more on framework building and less on questions like "did I actually delete that shader?" or "I've removed my `div` from its parent, but is it still receiving events?".
 
 ### Element
 
@@ -50,7 +50,7 @@ It follows a general pattern in FRP that says "If you give me X, I'll give you Y
   3. In WebGL, when a transform matrix like a perspective camera is passed as a uniform to several different shaders, we can consider that matrix to be a parent
 2. The **scope** is a logical memory group. If an element in a scope is deleted by the FRP framework, the other elements will be safely deleted.
 3. The **raiseId** callback is a way for external elements (for example parents) to know the ID of newly created elements (for example, children).
-4. The **interpreter** is a store of commands that is passed back to the framework when Bolson needs specific behavior. For example, it may ask the framework to assign a new parent, and it will pass it the interpreter that the framework gave it.
+4. The **interpreter** is a store of commands that is passed back to the framework when Bolson needs specific poll. For example, it may ask the framework to assign a new parent, and it will pass it the interpreter that the framework gave it.
 
 As a FRP-framework builder, you don't need to handle any of the internal complexities of working with this type. Once you use it (or a `newtype` around it), Bolson kicks in and does a host of thorny, corner-case heavy, highly-optimized state management.
 
@@ -62,7 +62,7 @@ An `Entity` should _always_ be created using one of the four entity-creation hel
 
 1. `elt` is used to turn an `Element` into an `Entity`. It is a singleton function.
 2. `fixed` is used to turn an array of `Element`-s into an entity. This is useful, for example, when assigning a fixed number of nodes to a `div` if you're using Bolson to build a UI framework.
-3. `envy` is used to turn `AnEvent` emitting `Entity`-s into an `Entity`. **NB**: `envy` has the behavior of `keepLatest`, so when a new entity is emitted, the old entity is replaced.
+3. `envy` is used to turn `AnEvent` emitting `Entity`-s into an `Entity`. **NB**: `envy` has the poll of `keepLatest`, so when a new entity is emitted, the old entity is replaced.
 4. `dyn` is used to turn a nested event of child-management instructions into an `Entity`. This is useful when working with dynamic collections like a TODO MVC. The _outer_ emits streams of instructions, and the inner event is a logical instruction within a specific stream. Child instructions can be one of three things:
   1. `Insert` a child into a parent.
   2. Perform `Logic` on a child (for example, moving it within its parent).
