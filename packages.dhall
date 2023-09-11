@@ -6,6 +6,8 @@ in  upstream
   with hyrule =
     { dependencies =
       [ "aff"
+      , "avar"
+      , "free"
   , "arrays"
   , "control"
   , "datetime"
@@ -30,5 +32,5 @@ in  upstream
   , "web-uievents"
       ]
     , repo = "https://github.com/mikesol/purescript-hyrule.git"
-    , version = "f388528a9aaa25a5307bf67f6ed12d2097620929"
+    , version = "ef74fae"
     }
