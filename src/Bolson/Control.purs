@@ -20,6 +20,7 @@ import Prelude
 import Bolson.Core (Child(..), DynamicChildren(..), Element(..), Entity(..), FixedChildren(..), PSR, Scope(..))
 import Control.Lazy as Lazy
 import Control.Monad.ST.Class (liftST)
+import Control.Monad.ST.Global as Global
 import Control.Monad.ST.Global as Region
 import Control.Monad.ST.Internal (ST)
 import Control.Monad.ST.Internal as Ref
@@ -120,6 +121,26 @@ type PortalSimple logic specialization interpreter obj1 obj2 r payload =
   , toElt :: obj1 payload -> Element interpreter r payload
   }
 
+behaving'
+  :: forall a
+   . ( forall b
+        . (forall c. Event c -> (c -> EventfulProgram b) -> ST Global.Global (ST Global.Global Unit))
+       -> Event (a -> b)
+       -> (a -> EventfulProgram b)
+       -> (Event b -> EventfulProgram b)
+       -> EventfulProgram b
+     )
+  -> Poll a
+behaving' iii = poll \e -> makeEvent \subscribe -> do
+  urf <- Ref.new (pure unit)
+  ugh <- subscribe e \f -> do
+    iii subscribe e (f >>> justOne) \z -> justNone do
+      acsu <- subscribe z justOne
+      void $ Ref.modify (_ *> acsu) urf
+  pure do
+    liftST $ join (Ref.read urf)
+    ugh
+
 behaving
   :: forall a
    . ( forall b
@@ -129,15 +150,7 @@ behaving
        -> EventfulProgram b
      )
   -> Poll a
-behaving iii = poll \e -> makeEvent \subscribe -> do
-  urf <- Ref.new (pure unit)
-  ugh <- subscribe e \f -> do
-    iii e (f >>> justOne) \z -> justNone do
-      acsu <- subscribe z justOne
-      void $ Ref.modify (_ *> acsu) urf
-  pure do
-    liftST $ join (Ref.read urf)
-    ugh
+behaving iii = behaving' \_ -> iii
 
 internalPortalSimpleComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -166,7 +179,7 @@ internalPortalSimpleComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = behaving \e kx subscribe -> do
+  go psr interpreter = behaving' \fullSub e kx subscribe -> do
     -- we initialize a mutable array with empty ids and empty elements
     -- for each element in the portal vector
     av <- justNone $ mutAr
@@ -251,7 +264,11 @@ internalPortalSimpleComplex
                     , raiseId = \id -> do
                         unsafeUpdateMutAr ix { id, entity: Element' entity } av
                         ii <- Ref.read arct
-                        if ii + 1 == Array.length (toArray toBeam) then pure unit
+                        if ii + 1 == Array.length (toArray toBeam) then do
+                               ugh <- createPure
+                               ughhh <- fullSub ugh.event \_ -> cont
+                               ugh.push unit
+                               ughhh
                         else void $ Ref.modify (add 1) arct
                     }
                 )
@@ -261,7 +278,6 @@ internalPortalSimpleComplex
         )
         (toArray toBeam)
     subscribe (merge actualized)
-    cont
 
 internalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -291,7 +307,7 @@ internalPortalComplexComplex
   toBeam
   closure = Element' $ fromEltO2 $ Element go
   where
-  go psr interpreter = behaving \e kx subscribe -> do
+  go psr interpreter = behaving' \fullSub e kx subscribe -> do
     -- we initialize a mutable array with empty ids and empty elements
     -- for each element in the portal vector
     av <- justNone $ mutAr
@@ -375,7 +391,11 @@ internalPortalComplexComplex
                       , raiseId = \id -> do
                           unsafeUpdateMutAr ix { id, entity } av
                           ii <- Ref.read arct
-                          if ii + 1 == Array.length (toArray toBeam) then pure unit
+                          if ii + 1 == Array.length (toArray toBeam) then do
+                               ugh <- createPure
+                               ughhh <- fullSub ugh.event \_ -> cont
+                               ugh.push unit
+                               ughhh
                           else void $ Ref.modify (add 1) arct
                       }
                   )
@@ -386,7 +406,6 @@ internalPortalComplexComplex
         )
         (toArray toBeam)
     subscribe (merge actualized)
-    cont
 
 internalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -414,7 +433,7 @@ internalPortalComplexSimple
   toBeam
   closure = fromEltO2 $ Element go
   where
-  go psr interpreter = behaving \e kx subscribe -> do
+  go psr interpreter = behaving' \fullSub e kx subscribe -> do
     -- we initialize a mutable array with empty ids and empty elements
     -- for each element in the portal vector
     av <- justNone $ mutAr
@@ -498,7 +517,11 @@ internalPortalComplexSimple
                       , raiseId = \id -> do
                           unsafeUpdateMutAr ix { id, entity } av
                           ii <- Ref.read arct
-                          if ii + 1 == Array.length (toArray toBeam) then pure unit
+                          if ii + 1 == Array.length (toArray toBeam) then do
+                               ugh <- createPure
+                               ughhh <- fullSub ugh.event \_ -> cont
+                               ugh.push unit
+                               ughhh
                           else void $ Ref.modify (add 1) arct
                       }
                   )
@@ -509,7 +532,6 @@ internalPortalComplexSimple
         )
         (toArray toBeam)
     subscribe (merge actualized)
-    cont
 
 globalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
