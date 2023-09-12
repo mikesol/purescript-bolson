@@ -2,11 +2,14 @@ module Bolson.Core where
 
 import Prelude
 
+import Control.Monad.Free (Free)
 import Control.Monad.ST (ST)
-import Control.Monad.ST.Global as ST
+import Control.Monad.ST.Global as Global
+import Data.Functor.Compose (Compose)
 import Data.List as List
 import Data.Maybe (Maybe)
 import Data.Tuple (Tuple)
+import FRP.Event (ProgramfulEvent)
 import FRP.Poll (Poll)
 
 type HeadElement' interpreter payload = interpreter -> Poll payload
@@ -34,7 +37,7 @@ derive instance Ord Scope
 type PSR r =
   { parent :: Maybe String
   , scope :: Scope
-  , raiseId :: String -> ST ST.Global Unit
+  , raiseId :: String -> ProgramfulEvent Unit
   , deferralPath :: List.List Int
   | r
   }

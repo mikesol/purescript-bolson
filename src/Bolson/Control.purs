@@ -251,7 +251,7 @@ internalPortalSimpleComplex
                     , raiseId = \id -> do
                         unsafeUpdateMutAr ix { id, entity: Element' entity } av
                         ii <- Ref.read arct
-                        if ii + 1 == Array.length (toArray toBeam) then pure unit
+                        if ii + 1 == Array.length (toArray toBeam) then cont
                         else void $ Ref.modify (add 1) arct
                     }
                 )
@@ -261,7 +261,6 @@ internalPortalSimpleComplex
         )
         (toArray toBeam)
     subscribe (merge actualized)
-    cont
 
 internalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -375,7 +374,7 @@ internalPortalComplexComplex
                       , raiseId = \id -> do
                           unsafeUpdateMutAr ix { id, entity } av
                           ii <- Ref.read arct
-                          if ii + 1 == Array.length (toArray toBeam) then pure unit
+                          if ii + 1 == Array.length (toArray toBeam) then cont
                           else void $ Ref.modify (add 1) arct
                       }
                   )
@@ -386,7 +385,6 @@ internalPortalComplexComplex
         )
         (toArray toBeam)
     subscribe (merge actualized)
-    cont
 
 internalPortalComplexSimple
   :: forall n r logic obj1 obj2 specialization interpreter payload
@@ -498,7 +496,7 @@ internalPortalComplexSimple
                       , raiseId = \id -> do
                           unsafeUpdateMutAr ix { id, entity } av
                           ii <- Ref.read arct
-                          if ii + 1 == Array.length (toArray toBeam) then pure unit
+                          if ii + 1 == Array.length (toArray toBeam) then cont
                           else void $ Ref.modify (add 1) arct
                       }
                   )
@@ -509,7 +507,6 @@ internalPortalComplexSimple
         )
         (toArray toBeam)
     subscribe (merge actualized)
-    cont
 
 globalPortalComplexComplex
   :: forall n r logic obj1 obj2 specialization interpreter payload
