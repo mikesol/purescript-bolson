@@ -1,25 +1,29 @@
 {
-	"name": "purescript-bolson",
-	"version": "0.3.1",
-	"description": "A FRP framework builder.",
-	"scripts": {},
-	"keywords": [],
-	"author": "",
-	"license": "ISC",
-	"devDependencies": {
-		"bower": "^1.8.14",
-		"esbuild": "^0.14.38",
-		"filter-console": "^0.1.1",
-		"headless-devtools": "^2.0.1",
-		"netlify-cli": "^8.0.1",
-		"psc-package": "^4.0.1",
-		"pulp": "^15.0.0",
-		"puppeteer": "^5.2.0",
-		"purescript": "^0.15.7",
-		"purs-backend-es": "^1.2.0",
-		"purs-tidy": "^0.9.2",
-		"spago": "^0.20.9",
-		"test": "^0.6.0",
-		"tracealyzer": "^0.10.3"
-	}
+  "name": "purescript-bolson",
+  "version": "0.3.1",
+  "description": "A FRP framework builder.",
+  "scripts": {
+    "build": "spago build --strict --censor-stats --pedantic-packages",
+    "format": "purs-tidy format-in-place src test",
+    "check": "purs-tidy check src test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "bower": "^1.8.14",
+    "esbuild": "^0.20.2",
+    "filter-console": "^1.0.0",
+    "headless-devtools": "^2.0.1",
+    "netlify-cli": "^17.19.5",
+    "psc-package": "^4.0.1",
+    "pulp": "^16.0.2",
+    "puppeteer": "^22.5.0",
+    "purescript": "^0.15.15",
+    "purs-backend-es": "^1.4.2",
+    "purs-tidy": "^0.11.0",
+    "spago": "next",
+    "test": "^3.3.0",
+    "tracealyzer": "^0.10.3"
+  }
 }

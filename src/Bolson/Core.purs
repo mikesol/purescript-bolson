@@ -21,7 +21,7 @@ data Child (logic :: Type)
   | Logic logic
 
 newtype DynamicChildren logic obj = DynamicChildren
-      (Poll (Tuple (Poll (Child logic)) (Entity logic obj)))
+  (Poll (Tuple (Poll (Child logic)) (Entity logic obj)))
 
 newtype FixedChildren logic obj = FixedChildren
   (Array (Entity logic obj))
