@@ -1,0 +1,31 @@
+package:
+  name: bolson
+  publish:
+    version: 0.3.1
+    license: Apache-2.0
+    location:
+      githubOwner: mikesol
+      githubRepo: purescript-bolson
+  dependencies:
+    - arrays
+    - control
+    - fast-vect
+    - filterable
+    - foldable-traversable
+    - foreign-object
+    - hyrule
+    - lists
+    - maybe
+    - prelude
+    - record
+    - st
+    - tuples
+    - unsafe-coerce
+workspace:
+  extraPackages:
+    hyrule:
+      # git: https://github.com/mikesol/purescript-hyrule.git
+      # ref: main
+      path: /home/srghma/projects/purescript-hyrule # REMOVE-LINE-PRE-COMMIT
+  packageSet:
+    registry: 57.1.0
