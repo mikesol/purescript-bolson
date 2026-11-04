@@ -19,3 +19,4 @@ packages.json
 /test/test.js
 /test/.spago
 /test/output/
+/spago.lock
